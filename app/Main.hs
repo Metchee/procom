@@ -7,8 +7,8 @@ import Data.Semigroup ((<>))
 import Control.Monad (when)
 import System.IO (readFile, writeFile, hPutStrLn, stderr)
 import System.Exit (exitSuccess, exitWith, ExitCode(..))
-import Control.Exception (IOException)  -- Ce type est disponible via base
-import qualified Control.Exception as E -- On n'utilisera que le type, pas les fonctions
+import Control.Exception (IOException)
+import qualified Control.Exception as E
 
 import Document.Types
 import Parser.XML (parseXML)
@@ -75,25 +75,45 @@ run opts = do
     exitWithError (UnsupportedFormat (fromJust (inputFormat opts)))
   
   -- Lire le fichier d'entrée
+  hPutStrLn stderr $ "Lecture du fichier: " ++ inputFile opts
   content <- readFileOrExit (inputFile opts)
   
   -- Détecter le format d'entrée ou utiliser celui spécifié
   format <- case inputFormat opts of
-    Just fmt -> return (stringToFormat fmt)
-    Nothing -> case detectFormat content of
-      Just fmt -> return fmt
-      Nothing -> exitWithError (ParseError "Could not detect input format")
+    Just fmt -> do
+      hPutStrLn stderr $ "Format spécifié: " ++ fmt
+      return (stringToFormat fmt)
+    Nothing -> do
+      case detectFormat content of
+        Just fmt -> do
+          hPutStrLn stderr $ "Format détecté: " ++ show fmt
+          return fmt
+        Nothing -> do
+          hPutStrLn stderr "Impossible de détecter le format d'entrée"
+          exitWithError (ParseError "Could not detect input format")
   
   -- Parser le document
+  hPutStrLn stderr $ "Tentative de parsing avec le format: " ++ show format
+  hPutStrLn stderr $ "Contenu (premières 100 caractères): " ++ take 100 content
+  
   doc <- case parseByFormat format content of
-    Just d -> return d
-    Nothing -> exitWithError (ParseError "Failed to parse document")
+    Just d -> do
+      hPutStrLn stderr "Parsing réussi!"
+      return d
+    Nothing -> do
+      hPutStrLn stderr "Échec du parsing"
+      exitWithError (ParseError "Failed to parse document")
   
   -- Formatter et sortir le résultat
+  hPutStrLn stderr $ "Formatage au format: " ++ outputFormat opts
   let output = formatByFormat (stringToFormat (outputFormat opts)) doc
   case outputFile opts of
-    Just file -> writeFile file output
+    Just file -> do
+      hPutStrLn stderr $ "Écriture dans le fichier: " ++ file
+      writeFile file output
     Nothing -> putStr output
+  
+  hPutStrLn stderr "Conversion terminée avec succès"
 
 -- Vérifier si un format est valide
 isValidFormat :: String -> Bool
@@ -115,12 +135,11 @@ formatByFormat XML = formatXML
 formatByFormat JSON = formatJSON
 formatByFormat Markdown = formatMarkdown
 
--- Lire un fichier avec gestion d'erreur - version simplifiée
+-- Lire un fichier avec gestion d'erreur
 readFileOrExit :: FilePath -> IO String
 readFileOrExit path = do
-  -- À la place de try/catch, on va simplement essayer de lire le fichier
-  -- Si une erreur se produit, le programme s'arrêtera avec un message personnalisé
-  catch (readFile path) (\(_ :: IOException) -> 
+  catch (readFile path) (\(e :: IOException) -> do
+    hPutStrLn stderr $ "Erreur lors de la lecture du fichier: " ++ show e
     exitWithError (FileNotFound path))
 
 -- Fonction basique de gestion d'erreur pour les IO actions

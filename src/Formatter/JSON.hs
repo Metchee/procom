@@ -76,6 +76,18 @@ formatContent indent (Section title contents) =
   joinWithComma (map (formatContent (indent + 4)) contents) ++ "\n" ++
   spaces (indent + 2) ++ "]\n" ++
   spaces indent ++ "}"
+formatContent indent (CodeBlock code) =
+  spaces indent ++ "{\n" ++
+  spaces (indent + 2) ++ "\"type\": \"codeblock\",\n" ++
+  spaces (indent + 2) ++ "\"content\": \"" ++ escape code ++ "\"\n" ++
+  spaces indent ++ "}"
+formatContent indent (List items) =
+  spaces indent ++ "{\n" ++
+  spaces (indent + 2) ++ "\"type\": \"list\",\n" ++
+  spaces (indent + 2) ++ "\"items\": [\n" ++
+  joinWithComma (map (formatItem (indent + 4)) items) ++ "\n" ++
+  spaces (indent + 2) ++ "]\n" ++
+  spaces indent ++ "}"
 
 -- Formatter un élément de liste en JSON
 formatItem :: Int -> Item -> String
@@ -99,7 +111,28 @@ formatContentInline (Link text url) =
   "{\n      \"type\": \"link\",\n      \"text\": \"" ++ escape text ++ "\",\n      \"url\": \"" ++ escape url ++ "\"\n    }"
 formatContentInline (Image alt url) = 
   "{\n      \"type\": \"image\",\n      \"alt\": \"" ++ escape alt ++ "\",\n      \"url\": \"" ++ escape url ++ "\"\n    }"
-formatContentInline _ = "null" -- Autres cas non supportés en inline
+formatContentInline (Paragraph contents) =
+  "{\n      \"type\": \"paragraph\",\n      \"content\": [" ++ 
+  (joinWithComma (map formatContentInline contents)) ++ 
+  "]\n    }"
+formatContentInline (Section title contents) =
+  "{\n      \"type\": \"section\",\n      \"title\": \"" ++ escape title ++ 
+  "\",\n      \"content\": [" ++ 
+  (joinWithComma (map formatContentInline contents)) ++
+  "]\n    }"
+formatContentInline (CodeBlock code) =
+  "{\n      \"type\": \"codeblock\",\n      \"content\": \"" ++ escape code ++ "\"\n    }"
+formatContentInline (List items) =
+  "{\n      \"type\": \"list\",\n      \"items\": [" ++
+  (joinWithComma (map formatItemInline items)) ++
+  "]\n    }"
+
+-- Formatter un élément de liste en ligne pour JSON
+formatItemInline :: Item -> String
+formatItemInline (Item contents) =
+  "{\n        \"content\": [" ++
+  (joinWithComma (map formatContentInline contents)) ++
+  "]\n      }"
 
 -- Échapper les caractères spéciaux JSON
 escape :: String -> String

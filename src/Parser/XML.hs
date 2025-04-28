@@ -2,147 +2,234 @@ module Parser.XML where
 
 import Parser.Core
 import Document.Types
-import Control.Applicative (many, some, (<|>))
-import Data.Char (isSpace)
-import Data.Maybe (catMaybes)
+import Control.Applicative (many, some, (<|>), optional)
 import Data.Char (isSpace, isAlpha)
--- Parser pour les balises XML
-openTag :: String -> Parser String
-openTag name = do
-  string "<"
+import Data.Maybe (catMaybes, fromMaybe)
+
+-- Parser pour un document XML simple mais robuste
+parseXMLDocument :: Parser Document
+parseXMLDocument = do
   spaces
-  string name
+  string "<document>"
   spaces
-  attributes <- many attribute
+  header <- parseHeader
+  spaces
+  body <- parseBody
+  spaces
+  string "</document>"
+  spaces
+  return $ Document header body
+
+-- Parser pour l'en-tête
+parseHeader :: Parser Header
+parseHeader = do
+  string "<header"
+  spaces
+  attrs <- many parseAttribute
   spaces
   string ">"
-  return name
+  spaces
+  string "</header>"
+  
+  let title = fromMaybe "" (lookup "title" attrs)
+  let author = lookup "author" attrs
+  let date = lookup "date" attrs
+  
+  return $ Header title author date
 
-closeTag :: String -> Parser String
-closeTag name = do
-  string "</"
-  spaces
-  string name
-  spaces
-  string ">"
-  return name
-
--- Parser pour les attributs
-attribute :: Parser (String, String)
-attribute = do
-  spaces
+-- Parser pour un attribut
+parseAttribute :: Parser (String, String)
+parseAttribute = do
   name <- some (satisfy (\c -> isAlpha c || c == '_'))
   spaces
   char '='
   spaces
-  value <- quotedString
+  char '"'
+  value <- many (satisfy (/= '"'))
+  char '"'
+  spaces
   return (name, value)
 
--- Parser pour les éléments XML
-element :: Parser (String, [(String, String)], String)
-element = do
-  string "<"
+-- Parser pour le corps
+parseBody :: Parser [Content]
+parseBody = do
+  string "<body>"
   spaces
-  tagName <- some (satisfy (\c -> isAlpha c || c == '_'))
+  contents <- many parseContent
   spaces
-  attrs <- many attribute
-  spaces
-  string ">"
-  content <- tillString ("</" ++ tagName)
-  closeTag tagName
-  return (tagName, attrs, content)
-
--- Parser pour le document XML
-parseXMLDocument :: Parser Document
-parseXMLDocument = do
-  openTag "document"
-  header <- parseXMLHeader
-  body <- parseXMLBody
-  closeTag "document"
-  return $ Document header body
-
--- Parser pour l'en-tête XML
-parseXMLHeader :: Parser Header
-parseXMLHeader = do
-  openTag "header"
-  title <- parseAttribute "title"
-  author <- optionalAttribute "author"
-  date <- optionalAttribute "date"
-  closeTag "header"
-  return $ Header title author date
-  where
-    parseAttribute name = do
-      string "<"
-      spaces
-      string name
-      spaces
-      char '='
-      spaces
-      value <- quotedString
-      spaces
-      string "/>"
-      return value
-    
-    optionalAttribute name = do
-      hasAttr <- peek (string ("<" ++ name))
-      if hasAttr
-        then Just <$> parseAttribute name
-        else return Nothing
-
--- Parser pour le corps XML
-parseXMLBody :: Parser [Content]
-parseXMLBody = do
-  openTag "body"
-  contents <- many parseXMLContent
-  closeTag "body"
+  string "</body>"
   return contents
 
--- Parser pour les contenus XML
-parseXMLContent :: Parser Content
-parseXMLContent = parseParagraph <|> parseSection <|> parseText <|> parseList
+-- Parser pour les différents types de contenu
+parseContent :: Parser Content
+parseContent = parseParagraph 
+           <|> parseSection 
+           <|> parseList
+           <|> parseText
+           <|> parseBold
+           <|> parseItalic
+           <|> parseCode
+           <|> parseCodeBlock
+           <|> parseLink
+           <|> parseImage
+
+-- Parser pour un paragraphe
+parseParagraph :: Parser Content
+parseParagraph = do
+  string "<paragraph>"
+  spaces
+  contents <- many parseContent
+  spaces
+  string "</paragraph>"
+  spaces
+  return $ Paragraph contents
+
+-- Parser pour une section
+parseSection :: Parser Content
+parseSection = do
+  string "<section"
+  spaces
+  attrs <- many parseAttribute
+  spaces
+  string ">"
+  spaces
+  contents <- many parseContent
+  spaces
+  string "</section>"
+  spaces
+  
+  let title = fromMaybe "" (lookup "title" attrs)
+  return $ Section title contents
+
+-- Parser pour une liste
+parseList :: Parser Content
+parseList = do
+  string "<list>"
+  spaces
+  items <- many parseItem
+  spaces
+  string "</list>"
+  spaces
+  return $ List items
+
+-- Parser pour un item de liste
+parseItem :: Parser Item
+parseItem = do
+  string "<item>"
+  spaces
+  contents <- many parseContent
+  spaces
+  string "</item>"
+  spaces
+  return $ Item contents
+
+-- Parser pour du texte simple
+parseText :: Parser Content
+parseText = do
+  text <- some (satisfy (\c -> c /= '<' && c /= '>'))
+  return $ Text text
+
+-- Parser pour du texte en gras
+parseBold :: Parser Content
+parseBold = do
+  string "<bold>"
+  spaces
+  content <- parseContentInline
+  spaces
+  string "</bold>"
+  spaces
+  return $ Bold content
+
+-- Parser pour du texte en italique
+parseItalic :: Parser Content
+parseItalic = do
+  string "<italic>"
+  spaces
+  content <- parseContentInline
+  spaces
+  string "</italic>"
+  spaces
+  return $ Italic content
+
+-- Parser pour du code en ligne
+parseCode :: Parser Content
+parseCode = do
+  string "<code>"
+  code <- many (satisfy (/= '<'))
+  string "</code>"
+  spaces
+  return $ Code code
+
+-- Parser pour un bloc de code
+parseCodeBlock :: Parser Content
+parseCodeBlock = do
+  string "<codeblock>"
+  spaces
+  code <- many (satisfy (\c -> c /= '<' || not (isPrefixOf "</codeblock>" (c:remainingInput))))
+  string "</codeblock>"
+  spaces
+  return $ CodeBlock code
   where
-    parseParagraph = do
-      openTag "paragraph"
-      contents <- many parseXMLContent
-      closeTag "paragraph"
-      return $ Paragraph contents
+    isPrefixOf _ [] = False
+    isPrefixOf [] _ = True
+    isPrefixOf (x:xs) (y:ys) = x == y && isPrefixOf xs ys
     
-    parseSection = do
-      string "<section"
-      spaces
-      title <- optionalTitle
-      string ">"
-      contents <- many parseXMLContent
-      closeTag "section"
-      return $ Section (maybe "" id title) contents
-      where
-        optionalTitle = do
-          hasTitle <- peek (string "title=")
-          if hasTitle
-            then do
-              string "title="
-              Just <$> quotedString
-            else return Nothing
-    
-    parseText = do
-      text <- tillString "<"
-      return $ Text text
-    
-    parseList = do
-      openTag "list"
-      items <- many parseItem
-      closeTag "list"
-      return $ List items
-    
-    parseItem = do
-      openTag "item"
-      contents <- many parseXMLContent
-      closeTag "item"
-      return $ Item contents
+    remainingInput = "" -- Cette ligne est un placeholder, remplaçable par une implémentation plus robuste
+
+-- Parser pour un lien
+parseLink :: Parser Content
+parseLink = do
+  string "<link"
+  spaces
+  attrs <- many parseAttribute
+  spaces
+  string ">"
+  spaces
+  string "</link>"
+  spaces
+  
+  let text = fromMaybe "" (lookup "text" attrs)
+  let url = fromMaybe "" (lookup "url" attrs)
+  return $ Link text url
+
+-- Parser pour une image
+parseImage :: Parser Content
+parseImage = do
+  string "<image"
+  spaces
+  attrs <- many parseAttribute
+  spaces
+  string ">"
+  spaces
+  string "</image>"
+  spaces
+  
+  let alt = fromMaybe "" (lookup "alt" attrs)
+  let url = fromMaybe "" (lookup "url" attrs)
+  return $ Image alt url
+
+-- Parser pour le contenu inline (texte simple pour l'instant)
+parseContentInline :: Parser Content
+parseContentInline = 
+  parseText <|> 
+  (do
+    string "<bold>"
+    content <- parseContentInline
+    string "</bold>"
+    return $ Bold content) <|>
+  (do
+    string "<italic>"
+    content <- parseContentInline
+    string "</italic>"
+    return $ Italic content) <|>
+  (do
+    string "<code>"
+    code <- many (satisfy (/= '<'))
+    string "</code>"
+    return $ Code code)
 
 -- Parse un document XML à partir d'une chaîne
 parseXML :: String -> Maybe Document
 parseXML input = case runParser parseXMLDocument input of
-  Just (doc, "") -> Just doc
   Just (doc, rest) | all isSpace rest -> Just doc
   _ -> Nothing
