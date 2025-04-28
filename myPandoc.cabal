@@ -1,0 +1,72 @@
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.37.0.
+--
+-- see: https://github.com/sol/hpack
+
+name:           myPandoc
+version:        0.1.0
+description:    Simplified document converter for XML, JSON and Markdown formats
+homepage:       https://github.com/votre-username/myPandoc#readme
+bug-reports:    https://github.com/votre-username/myPandoc/issues
+author:         Votre Nom
+maintainer:     votre.email@example.com
+copyright:      2025 Votre Nom
+license:        BSD3
+license-file:   LICENSE
+build-type:     Simple
+
+source-repository head
+  type: git
+  location: https://github.com/votre-username/myPandoc
+
+library
+  exposed-modules:
+      Document.Types
+      Error
+      Formatter.JSON
+      Formatter.Markdown
+      Formatter.XML
+      Lib
+      Parser.Core
+      Parser.Detect
+      Parser.JSON
+      Parser.Markdown
+      Parser.XML
+  other-modules:
+      Paths_myPandoc
+  hs-source-dirs:
+      src
+  build-depends:
+      base
+    , containers
+  default-language: Haskell2010
+
+executable mypandoc
+  main-is: Main.hs
+  other-modules:
+      Paths_myPandoc
+  hs-source-dirs:
+      app
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      base
+    , containers
+    , myPandoc
+    , optparse-applicative
+  default-language: Haskell2010
+
+test-suite myPandoc-test
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:
+      Paths_myPandoc
+  hs-source-dirs:
+      test
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      QuickCheck
+    , base
+    , hspec
+    , myPandoc
+  default-language: Haskell2010

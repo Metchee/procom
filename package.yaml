@@ -1,0 +1,48 @@
+name: myPandoc
+version: 0.1.0
+github: "votre-username/myPandoc"
+license: BSD3
+author: "Votre Nom"
+maintainer: "votre.email@example.com"
+copyright: "2025 Votre Nom"
+
+description: Simplified document converter for XML, JSON and Markdown formats
+
+dependencies:
+  - base >= 4.7 && < 5
+  # Pas d'autres dépendances pour la lib
+
+library:
+  source-dirs: src
+  dependencies:
+    - base
+    - containers
+
+executables:
+  mypandoc:
+    main: Main.hs
+    source-dirs: app
+    ghc-options:
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N
+    dependencies:
+      - myPandoc
+      - base
+      - containers
+      - optparse-applicative
+
+tests:
+  myPandoc-test:
+    main: Spec.hs
+    source-dirs: test
+    ghc-options:
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N
+    dependencies:
+      - myPandoc
+      - base
+      # Ici vous pouvez ajouter des dépendances pour les tests
+      - hspec
+      - QuickCheck
