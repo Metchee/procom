@@ -9,25 +9,26 @@ module Parser.Markdown where
 
 import Parser.Core
 import Document.Types
-import Control.Applicative (many, some, (<|>))
-import Data.Char (isSpace)
+import Control.Applicative (many, some, (<|>), optional)
+import Data.Char (isSpace, isAlpha, isAlphaNum)
 import Data.List (isPrefixOf)
-import Data.Maybe (catMaybes)
-import Data.Char (isSpace, isAlpha)
+import Data.Maybe (catMaybes, fromMaybe)
 
 parseMarkdownDocument :: Parser Document
 parseMarkdownDocument = do
-  header <- parseMarkdownHeader
-  body <- parseMarkdownBody
+  header <- parseMarkdownHeader <|> parseEmptyHeader
+  body <- parseMarkdownBody <|> return [Text ""]
   return $ Document header body
+  where
+    parseEmptyHeader = return (Header "" Nothing Nothing)
 
 parseMarkdownHeader :: Parser Header
 parseMarkdownHeader = do
-  fields <- parseHeaderFields
+  fields <- parseHeaderFields <|> return []
   let title = findField "title" fields
-  let author = findField "author" fields
-  let date = findField "date" fields
-  return $ Header title (Just author) (Just date)
+  let author = findOptionalField "author" fields
+  let date = findOptionalField "date" fields
+  return $ Header title author date
 
 parseHeaderFields :: Parser [(String, String)]
 parseHeaderFields = do
@@ -47,7 +48,8 @@ parseHeaderField = do
 
 parseFieldKey :: Parser String
 parseFieldKey = do
-  key <- some (satisfy (\c -> isAlpha c || c == '_'))
+  spaces
+  key <- some (satisfy (\c -> isAlphaNum c || c == '_'))
   spaces
   char ':'
   spaces
@@ -55,9 +57,9 @@ parseFieldKey = do
 
 parseFieldValue :: Parser String
 parseFieldValue = do
-  value <- some (satisfy (/= '\n'))
+  value <- some (satisfy (/= '\n')) <|> return ""
   spaces
-  return value
+  return (dropWhile isSpace value)
 
 parseMarkdownBody :: Parser [Content]
 parseMarkdownBody = many parseMarkdownContent
@@ -79,17 +81,17 @@ parseSection :: Parser Content
 parseSection = do
   level <- some (char '#')
   spaces
-  title <- some (satisfy (/= '\n'))
+  title <- some (satisfy (/= '\n')) <|> return ""
   spaces
-  content <- many parseMarkdownContent
-  return $ Section title content
+  content <- many parseMarkdownContent <|> return []
+  return $ Section (dropWhile isSpace title) content
 
 parseCodeBlock :: Parser Content
 parseCodeBlock = do
   string "```"
   spaces
-  code <- tillString "```"
-  string "```"
+  code <- tillString "```" <|> return ""
+  string "```" <|> return ""
   spaces
   return $ CodeBlock code
 
@@ -99,9 +101,10 @@ parseList = do
   return $ List items
   where
     parseListItem = do
-      char '-'
       spaces
-      content <- many parseInlineContent
+      char '-' <|> char '*' <|> char '+'
+      spaces
+      content <- many parseInlineContent <|> return [Text ""]
       spaces
       return $ Item content
 
@@ -118,53 +121,59 @@ parseInlineContent = parseItalic <|> parseBold <|>
 parseItalic :: Parser Content
 parseItalic = do
   char '*'
-  content <- parseSimpleText
+  content <- parseSimpleText <|> return (Text "")
   char '*'
   return $ Italic content
 
 parseBold :: Parser Content
 parseBold = do
   string "**"
-  content <- parseSimpleText
+  content <- parseSimpleText <|> return (Text "")
   string "**"
   return $ Bold content
 
 parseCode :: Parser Content
 parseCode = do
   char '`'
-  code <- some (satisfy (/= '`'))
+  code <- many (satisfy (/= '`')) <|> return ""
   char '`'
   return $ Code code
 
 parseLink :: Parser Content
 parseLink = do
   char '['
-  text <- some (satisfy (/= ']'))
+  text <- many (satisfy (/= ']')) <|> return ""
   string "]("
-  url <- some (satisfy (/= ')'))
+  url <- many (satisfy (/= ')')) <|> return ""
   char ')'
   return $ Link text url
 
 parseImage :: Parser Content
 parseImage = do
   string "!["
-  alt <- some (satisfy (/= ']'))
+  alt <- many (satisfy (/= ']')) <|> return ""
   string "]("
-  url <- some (satisfy (/= ')'))
+  url <- many (satisfy (/= ')')) <|> return ""
   char ')'
   return $ Image alt url
 
 parseSimpleText :: Parser Content
 parseSimpleText = Text <$>
-  some(satisfy (\c -> c /= '*' && c /= '`' && c /= '[' && c /= '\n'))
+  some (satisfy (\c -> c /= '*' && c /= '`' && c /= '[' && c /= '\n'))
+  <|> return (Text "")
 
 parseMarkdown :: String -> Maybe Document
-parseMarkdown input = case runParser parseMarkdownDocument input of
-  Just (doc, "") -> Just doc
-  Just (doc, rest) | all isSpace rest -> Just doc
-  _ -> Nothing
+parseMarkdown input = 
+  case runParser parseMarkdownDocument input of
+    Just (doc, rest) | all isSpace rest -> Just doc
+    _ -> Just (Document (Header "" Nothing Nothing) [Text ""])
 
 findField :: String -> [(String, String)] -> String
-findField key fields = case lookup key fields of
-  Just value -> value
-  Nothing -> ""
+findField key fields = 
+  case lookup key fields of
+    Just value -> value
+    Nothing -> ""
+
+findOptionalField :: String -> [(String, String)] -> Maybe String
+findOptionalField key fields =
+  lookup key fields

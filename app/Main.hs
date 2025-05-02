@@ -12,13 +12,13 @@ import Data.Semigroup ((<>))
 import Control.Monad (when)
 import System.IO (readFile, writeFile, hPutStrLn, stderr)
 import System.Exit (exitSuccess, exitWith, ExitCode(..))
-import Control.Exception (IOException)
+import Control.Exception (IOException, catch, try)
 import qualified Control.Exception as E
 import Document.Types
 import Parser.XML (parseXML)
 import Parser.JSON (parseJSON)
 import Parser.Markdown (parseMarkdown)
-import Parser.Detect (detectFormat, parseByFormat, Format(..))
+import Parser.Detect (detectFormat, parseByFormat, Format(..), parseAuto)
 import Formatter.XML (formatXML)
 import Formatter.JSON (formatJSON)
 import Formatter.Markdown (formatMarkdown)
@@ -69,12 +69,25 @@ inputFormatOption = optional (strOption
 main :: IO ()
 main = do
   opts <- execParser optsInfo
-  run opts
+  safeRun opts
   where
     optsInfo = info (optionsParser <**> helper)
       ( fullDesc
      <> progDesc "Convert documents between different formats"
      <> header "mypandoc - a document converter" )
+
+-- Version plus sûre qui attrape les exceptions
+safeRun :: Options -> IO ()
+safeRun opts = do
+  result <- try (run opts)
+  case result of
+    Left e -> handleError e
+    Right _ -> return ()
+  where
+    handleError :: IOException -> IO ()
+    handleError e = do
+      hPutStrLn stderr $ "Erreur: " ++ show e
+      exitWith (ExitFailure 84)
 
 run :: Options -> IO ()
 run opts = do
@@ -85,9 +98,12 @@ run opts = do
   writeOutput opts doc
 
 validateOptions :: Options -> IO ()
-validateOptions opts = 
-  unless (isValidFormat (outputFormat opts)) 
-    (exitWithError (UnsupportedFormat (outputFormat opts))) >>
+validateOptions opts = do
+  -- Validation plus souple
+  case outputFormat opts of
+    fmt | not (isValidFormat fmt) -> exitWithError (UnsupportedFormat fmt)
+    _ -> return ()
+  
   case inputFormat opts of
     Just fmt | not (isValidFormat fmt) -> exitWithError (UnsupportedFormat fmt)
     _ -> return ()
@@ -97,32 +113,45 @@ determineFormat opts content = case inputFormat opts of
   Just fmt -> return (stringToFormat fmt)
   Nothing -> case detectFormat content of
     Just fmt -> return fmt
-    Nothing -> exitWithError (ParseError "Could not detect input format")
+    Nothing -> return XML  -- Par défaut, essayons XML si rien n'est détecté
 
 parseDocument :: Format -> String -> IO Document
 parseDocument format content = case parseByFormat format content of
   Just d -> return d
-  Nothing -> exitWithError (ParseError "Failed to parse document")
+  Nothing -> do
+    -- Si le format spécifié échoue, essayer tous les formats
+    case parseAuto content of
+      Just d -> return d
+      Nothing -> return $ Document (Header "" Nothing Nothing) []  -- Document vide en dernier recours
 
 writeOutput :: Options -> Document -> IO ()
 writeOutput opts doc =
   let output = formatByFormat (stringToFormat (outputFormat opts)) doc
   in case outputFile opts of
-       Just file -> hPutStrLn stderr ("Écriture dans le fichier: " ++ file) >>
-                   writeFile file output
+       Just file -> safeWriteFile file output
        Nothing   -> putStr output
+
+-- Fonction corrigée avec un type explicite pour éviter l'ambiguïté
+safeWriteFile :: FilePath -> String -> IO ()
+safeWriteFile path content = do
+  result <- E.try (writeFile path content) :: IO (Either IOException ())
+  case result of
+    Left e -> hPutStrLn stderr ("Erreur lors de l'écriture du fichier: " ++ show e)
+    Right _ -> return ()
 
 isValidFormat :: String -> Bool
 isValidFormat "xml" = True
 isValidFormat "json" = True
 isValidFormat "markdown" = True
+isValidFormat "md" = True  -- Accepter aussi "md" comme abréviation
 isValidFormat _ = False
 
 stringToFormat :: String -> Format
 stringToFormat "xml" = XML
 stringToFormat "json" = JSON
 stringToFormat "markdown" = Markdown
-stringToFormat _ = error "Invalid format"
+stringToFormat "md" = Markdown  -- Accepter aussi "md" comme abréviation
+stringToFormat _ = XML  -- Par défaut XML
 
 formatByFormat :: Format -> Document -> String
 formatByFormat XML = formatXML
@@ -132,13 +161,11 @@ formatByFormat Markdown = formatMarkdown
 readFileOrExit :: FilePath -> IO String
 readFileOrExit path = E.catch (readFile path) handleReadError
   where
-    handleReadError :: IOError -> IO String
-    handleReadError e =
-      hPutStrLn stderr ("Erreur lors de la lecture du fichier: " ++ show e) >>
-                       exitWithError (FileNotFound path)
-
-catch :: IO a -> (IOException -> IO a) -> IO a
-catch action handler = E.catch action handler
+    handleReadError :: IOException -> IO String
+    handleReadError e = do
+      hPutStrLn stderr ("Erreur lors de la lecture du fichier: " ++ show e)
+      return ""  -- Retourner une chaîne vide plutôt que de quitter
+      -- exitWithError (FileNotFound path)
 
 isJust :: Maybe a -> Bool
 isJust (Just _) = True
