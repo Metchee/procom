@@ -77,34 +77,33 @@ main = do
      <> header "mypandoc - a document converter" )
 
 safeRun :: Options -> IO ()
-safeRun opts = do
-  result <- try (run opts)
+safeRun opts = 
+  (try (run opts) :: IO (Either IOException ())) >>= \result ->
   case result of
     Left e -> handleError e
     Right _ -> return ()
   where
     handleError :: IOException -> IO ()
-    handleError e = do
-      hPutStrLn stderr $ "Erreur: " ++ show e
+    handleError e = 
+      hPutStrLn stderr ("Erreur: " ++ show e) >>
       exitWith (ExitFailure 84)
 
 run :: Options -> IO ()
-run opts = do
-  validateOptions opts
-  content <- readFileOrExit (inputFile opts)
-  format <- determineFormat opts content
-  doc <- parseDocument format content
+run opts =
+  validateOptions opts >>
+  readFileOrExit (inputFile opts) >>= \content ->
+  determineFormat opts content >>= \format ->
+  parseDocument format content >>= \doc ->
   writeOutput opts doc
 
 validateOptions :: Options -> IO ()
-validateOptions opts = do
+validateOptions opts =
   case outputFormat opts of
     fmt | not (isValidFormat fmt) -> exitWithError (UnsupportedFormat fmt)
-    _ -> return ()
-  
-  case inputFormat opts of
-    Just fmt | not (isValidFormat fmt) -> exitWithError (UnsupportedFormat fmt)
-    _ -> return ()
+    _ -> case inputFormat opts of
+           Just fmt | not (isValidFormat fmt) -> 
+             exitWithError (UnsupportedFormat fmt)
+           _ -> return ()
 
 determineFormat :: Options -> String -> IO Format
 determineFormat opts content = case inputFormat opts of
@@ -116,8 +115,7 @@ determineFormat opts content = case inputFormat opts of
 parseDocument :: Format -> String -> IO Document
 parseDocument format content = case parseByFormat format content of
   Just d -> return d
-  Nothing -> do
-    case parseAuto content of
+  Nothing -> case parseAuto content of
       Just d -> return d
       Nothing -> return $ Document (Header "" Nothing Nothing) []
 
@@ -129,8 +127,8 @@ writeOutput opts doc =
        Nothing   -> putStr output
 
 safeWriteFile :: FilePath -> String -> IO ()
-safeWriteFile path content = do
-  result <- E.try (writeFile path content) :: IO (Either IOException ())
+safeWriteFile path content = 
+  (E.try (writeFile path content) :: IO (Either IOException ())) >>= \result ->
   case result of
     Left e -> hPutStrLn stderr ("Erreur lors de l'écriture du fichier: " ++ show e)
     Right _ -> return ()
@@ -158,8 +156,9 @@ readFileOrExit :: FilePath -> IO String
 readFileOrExit path = E.catch (readFile path) handleReadError
   where
     handleReadError :: IOException -> IO String
-    handleReadError e = do
-      hPutStrLn stderr ("Erreur lors de la lecture du fichier: " ++ show e)
+    handleReadError e = 
+      hPutStrLn stderr ("Erreur lors de la lecture du fichier: " ++ 
+                        show e) >>
       return ""
 
 isJust :: Maybe a -> Bool

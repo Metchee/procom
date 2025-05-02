@@ -1,0 +1,16 @@
+./.stack-work/install/x86_64-linux/2a1d9a15212c98673ba0ea0ab4c6e34b5155977a0eb517f57aff3dd8c58b01cb/9.8.4/bin/mypandoc:1: MAJOR:C-O1
+./.stack-work/install/x86_64-linux/2a1d9a15212c98673ba0ea0ab4c6e34b5155977a0eb517f57aff3dd8c58b01cb/9.8.4/lib/x86_64-linux-ghc-9.8.4/libHSmyPandoc-0.1.0-77QU5B2yQp4AGiF2LchYTF-ghc9.8.4.so:1: MAJOR:C-O1
+./.stack-work/install/x86_64-linux/2a1d9a15212c98673ba0ea0ab4c6e34b5155977a0eb517f57aff3dd8c58b01cb/9.8.4/lib/x86_64-linux-ghc-9.8.4/myPandoc-0.1.0-77QU5B2yQp4AGiF2LchYTF/libHSmyPandoc-0.1.0-77QU5B2yQp4AGiF2LchYTF.a:1: MAJOR:C-O1
+./mypandoc:1: MAJOR:C-O1
+./app/Main.hs:133: MINOR:H-F3 # too long line
+./src/Error.hs:34: MAJOR:H-D1 # useless do
+./src/Parser/Detect.hs:23: MINOR:H-F3 # too long line
+./src/Parser/Detect.hs:24: MINOR:H-F3 # too long line
+./src/Parser/Markdown.hs:26: MINOR:H-F4 # too long function
+./src/Parser/Markdown.hs:163: MINOR:H-F3 # too long line
+./src/Parser/XML.hs:28: MAJOR:H-D1 # useless do
+./src/Parser/XML.hs:37: MAJOR:H-D1 # useless do
+./src/Parser/XML.hs:37: MINOR:H-F4 # too long function
+./src/Parser/XML.hs:52: MINOR:H-F3 # too long line
+./src/Parser/XML.hs:67: MAJOR:H-D1 # useless do
+./src/Parser/XML.hs:69: MINOR:H-F3 # too long line
