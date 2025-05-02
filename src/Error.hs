@@ -1,9 +1,15 @@
+{-
+-- EPITECH PROJECT, 2025
+-- procom
+-- File description:
+-- Error
+-}
+
 module Error where
 
 import System.Exit (exitWith, ExitCode(..))
 import System.IO (hPutStrLn, stderr)
 
--- Types d'erreurs
 data MyPandocError
   = InvalidArguments String
   | FileNotFound String
@@ -12,13 +18,11 @@ data MyPandocError
   | OutputError String
   deriving (Show, Eq)
 
--- Afficher un message d'erreur et quitter avec le code 84
 exitWithError :: MyPandocError -> IO a
-exitWithError err = do
-  hPutStrLn stderr (formatError err)
-  exitWith (ExitFailure 84)  -- Utilisez ExitFailure au lieu de ExitCode
+exitWithError err = 
+  hPutStrLn stderr (formatError err) >>
+  exitWith (ExitFailure 84)
   
--- Formater un message d'erreur
 formatError :: MyPandocError -> String
 formatError (InvalidArguments msg) = "Error: Invalid arguments - " ++ msg
 formatError (FileNotFound path) = "Error: File not found - " ++ path
@@ -26,7 +30,6 @@ formatError (ParseError msg) = "Error: Parse error - " ++ msg
 formatError (UnsupportedFormat fmt) = "Error: Unsupported format - " ++ fmt
 formatError (OutputError msg) = "Error: Output error - " ++ msg
 
--- Afficher un message d'usage
 showUsage :: IO ()
 showUsage = do
   putStrLn "USAGE: ./mypandoc -i ifile -f oformat [-o ofile] [-e iformat]"

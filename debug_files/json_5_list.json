@@ -1,0 +1,17 @@
+{
+  "header": {
+    "title": "With List"
+  },
+  "body": [
+    {
+      "list": [
+        [
+          "Item 1"
+        ],
+        [
+          "Item 2"
+        ]
+      ]
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "header": {
+    "title": "With Sections"
+  },
+  "body": [
+    {
+      "section": {
+        "title": "Section 1",
+        "content": [
+          "Section content"
+        ]
+      }
+    }
+  ]
+}

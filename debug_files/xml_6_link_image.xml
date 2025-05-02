@@ -1,0 +1,7 @@
+<document>
+<header title="With Link and Image"></header>
+<body>
+<paragraph>This has a <link url="https://example.com">link</link>.</paragraph>
+<paragraph>This has an <image url="https://example.com/img.png">alt text</image>.</paragraph>
+</body>
+</document>

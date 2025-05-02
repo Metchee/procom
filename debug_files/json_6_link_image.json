@@ -1,0 +1,31 @@
+{
+  "header": {
+    "title": "With Link and Image"
+  },
+  "body": [
+    [
+      "This has a ",
+      {
+        "link": {
+          "url": "https://example.com",
+          "content": [
+            "link"
+          ]
+        }
+      },
+      "."
+    ],
+    [
+      "This has an ",
+      {
+        "image": {
+          "url": "https://example.com/img.png",
+          "alt": [
+            "alt text"
+          ]
+        }
+      },
+      "."
+    ]
+  ]
+}

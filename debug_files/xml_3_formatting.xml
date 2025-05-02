@@ -1,0 +1,6 @@
+<document>
+<header title="With Formatting"></header>
+<body>
+<paragraph>This is <bold>bold</bold> and <italic>italic</italic> text.</paragraph>
+</body>
+</document>

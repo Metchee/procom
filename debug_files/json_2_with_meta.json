@@ -1,0 +1,10 @@
+{
+  "header": {
+    "title": "With Metadata",
+    "author": "Test Author",
+    "date": "2025-05-02"
+  },
+  "body": [
+    "Test"
+  ]
+}

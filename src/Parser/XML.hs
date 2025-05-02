@@ -1,3 +1,10 @@
+{-
+-- EPITECH PROJECT, 2025
+-- procom
+-- File description:
+-- XML
+-}
+
 module Parser.XML where
 
 import Parser.Core
@@ -6,229 +13,143 @@ import Control.Applicative (many, some, (<|>), optional)
 import Data.Char (isSpace, isAlpha)
 import Data.Maybe (catMaybes, fromMaybe)
 
--- Parser pour un document XML simple mais robuste
-parseXMLDocument :: Parser Document
-parseXMLDocument = do
-  spaces
-  string "<document>"
-  spaces
-  header <- parseHeader
-  spaces
-  body <- parseBody
-  spaces
-  string "</document>"
-  spaces
-  return $ Document header body
+parseAttribute :: Parser (String, String)
+parseAttribute = (,)
+  <$> some (satisfy (\c -> isAlpha c || c == '_'))
+  <*  spaces
+  <*  char '='
+  <*  spaces
+  <*  char '"'
+  <*> many (satisfy (/= '"'))
+  <*  char '"'
+  <*  spaces
 
--- Parser pour l'en-tête
+parseTagOpen :: String -> Parser ()
+parseTagOpen tag = 
+  string ("<" ++ tag) *> spaces *> string ">" *> spaces *> return ()
+
+parseTagClose :: String -> Parser ()
+parseTagClose tag = 
+  string ("</" ++ tag ++ ">") *> spaces *> return ()
+
+parseTagWithContent :: String -> Parser a -> Parser a
+parseTagWithContent tag contentParser =
+  parseTagOpen tag *> contentParser <* parseTagClose tag
+
+parseTagWithAttrs :: String -> Parser a -> Parser ([(String, String)], a)
+parseTagWithAttrs tag contentParser = 
+  (,) <$> (string ("<" ++ tag) *> spaces *> many parseAttribute
+      <* spaces <* string ">" <* spaces)
+      <*> (contentParser <* spaces <* parseTagClose tag)
+
+parseXMLDocument :: Parser Document
+parseXMLDocument = 
+  spaces *>
+  parseTagOpen "document" *>
+  (Document <$> parseHeader <*> parseBody) <*
+  parseTagClose "document" <*
+  spaces
+
 parseHeader :: Parser Header
 parseHeader = do
-  string "<header"
-  spaces
-  attrs <- many parseAttribute
-  spaces
-  string ">"
-  spaces
-  string "</header>"
-  
-  let title = fromMaybe "" (lookup "title" attrs)
-  let author = lookup "author" attrs
-  let date = lookup "date" attrs
-  
-  return $ Header title author date
+  (attrs, _) <- parseTagWithAttrs "header" (return ())
+  return $ Header 
+    (fromMaybe "" (lookup "title" attrs))
+    (lookup "author" attrs)
+    (lookup "date" attrs)
 
--- Parser pour un attribut
-parseAttribute :: Parser (String, String)
-parseAttribute = do
-  name <- some (satisfy (\c -> isAlpha c || c == '_'))
-  spaces
-  char '='
-  spaces
-  char '"'
-  value <- many (satisfy (/= '"'))
-  char '"'
-  spaces
-  return (name, value)
-
--- Parser pour le corps
 parseBody :: Parser [Content]
-parseBody = do
-  string "<body>"
-  spaces
-  contents <- many parseContent
-  spaces
-  string "</body>"
-  return contents
+parseBody = parseTagWithContent "body" (many parseContent)
 
--- Parser pour les différents types de contenu
 parseContent :: Parser Content
 parseContent = parseParagraph 
            <|> parseSection 
-           <|> parseList
+           <|> parseList 
+           <|> parseFormatting
+           <|> parseSpecialContent
            <|> parseText
-           <|> parseBold
-           <|> parseItalic
-           <|> parseCode
-           <|> parseCodeBlock
-           <|> parseLink
-           <|> parseImage
+  where
+    parseFormatting = parseBold <|> parseItalic <|> parseCode
+    parseSpecialContent = parseCodeBlock <|> parseLink <|> parseImage
 
--- Parser pour un paragraphe
+choice :: [Parser a] -> Parser a
+choice [] = Parser $ \_ -> Nothing
+choice (p:ps) = p <|> choice ps
+
 parseParagraph :: Parser Content
-parseParagraph = do
-  string "<paragraph>"
-  spaces
-  contents <- many parseContent
-  spaces
-  string "</paragraph>"
-  spaces
-  return $ Paragraph contents
+parseParagraph = Paragraph
+  <$> parseTagWithContent "paragraph" (many parseContent)
 
--- Parser pour une section
 parseSection :: Parser Content
 parseSection = do
-  string "<section"
-  spaces
-  attrs <- many parseAttribute
-  spaces
-  string ">"
-  spaces
-  contents <- many parseContent
-  spaces
-  string "</section>"
-  spaces
-  
-  let title = fromMaybe "" (lookup "title" attrs)
-  return $ Section title contents
+  (attrs, contents) <- parseTagWithAttrs "section" (many parseContent)
+  return $ Section (fromMaybe "" (lookup "title" attrs)) contents
 
--- Parser pour une liste
 parseList :: Parser Content
-parseList = do
-  string "<list>"
-  spaces
-  items <- many parseItem
-  spaces
-  string "</list>"
-  spaces
-  return $ List items
+parseList = List <$> parseTagWithContent "list" (many parseItem)
 
--- Parser pour un item de liste
 parseItem :: Parser Item
-parseItem = do
-  string "<item>"
-  spaces
-  contents <- many parseContent
-  spaces
-  string "</item>"
-  spaces
-  return $ Item contents
+parseItem = Item <$> parseTagWithContent "item" (many parseContent)
 
--- Parser pour du texte simple
 parseText :: Parser Content
-parseText = do
-  text <- some (satisfy (\c -> c /= '<' && c /= '>'))
-  return $ Text text
+parseText = Text <$> some (satisfy (\c -> c /= '<' && c /= '>'))
 
--- Parser pour du texte en gras
 parseBold :: Parser Content
-parseBold = do
-  string "<bold>"
-  spaces
-  content <- parseContentInline
-  spaces
-  string "</bold>"
-  spaces
-  return $ Bold content
+parseBold = Bold <$> parseTagWithContent "bold" parseContentInline
 
--- Parser pour du texte en italique
 parseItalic :: Parser Content
-parseItalic = do
-  string "<italic>"
-  spaces
-  content <- parseContentInline
-  spaces
-  string "</italic>"
-  spaces
-  return $ Italic content
+parseItalic = Italic <$> parseTagWithContent "italic" parseContentInline
 
--- Parser pour du code en ligne
 parseCode :: Parser Content
-parseCode = do
-  string "<code>"
-  code <- many (satisfy (/= '<'))
-  string "</code>"
-  spaces
-  return $ Code code
+parseCode = Code <$> parseCodeContent
+  where parseCodeContent = parseTagOpen "code" *> 
+                           many (satisfy (/= '<')) <* 
+                           parseTagClose "code"
 
--- Parser pour un bloc de code
 parseCodeBlock :: Parser Content
-parseCodeBlock = do
-  string "<codeblock>"
-  spaces
-  code <- many (satisfy (\c -> c /= '<' || not (isPrefixOf "</codeblock>" (c:remainingInput))))
-  string "</codeblock>"
-  spaces
-  return $ CodeBlock code
-  where
-    isPrefixOf _ [] = False
-    isPrefixOf [] _ = True
-    isPrefixOf (x:xs) (y:ys) = x == y && isPrefixOf xs ys
-    
-    remainingInput = "" -- Cette ligne est un placeholder, remplaçable par une implémentation plus robuste
+parseCodeBlock = CodeBlock <$> parseCodeBlockContent
+  where 
+    parseCodeBlockContent = 
+      parseTagOpen "codeblock" *>
+      many (satisfy (/= '<')) <*
+      parseTagClose "codeblock"
 
--- Parser pour un lien
 parseLink :: Parser Content
-parseLink = do
-  string "<link"
-  spaces
-  attrs <- many parseAttribute
-  spaces
-  string ">"
-  spaces
-  string "</link>"
-  spaces
-  
-  let text = fromMaybe "" (lookup "text" attrs)
-  let url = fromMaybe "" (lookup "url" attrs)
-  return $ Link text url
+parseLink = parseAttributedTag "link" Link
 
--- Parser pour une image
 parseImage :: Parser Content
-parseImage = do
-  string "<image"
-  spaces
-  attrs <- many parseAttribute
-  spaces
-  string ">"
-  spaces
-  string "</image>"
-  spaces
-  
-  let alt = fromMaybe "" (lookup "alt" attrs)
-  let url = fromMaybe "" (lookup "url" attrs)
-  return $ Image alt url
+parseImage = parseAttributedTag "image" Image
 
--- Parser pour le contenu inline (texte simple pour l'instant)
+parseAttributedTag :: String -> (String -> String -> Content) -> Parser Content
+parseAttributedTag tag constructor = do
+  (attrs, _) <- parseTagWithAttrs tag (return ())
+  let attr1 = case tag of
+              "link" -> fromMaybe "" (lookup "text" attrs)
+              "image" -> fromMaybe "" (lookup "alt" attrs)
+              _ -> ""
+  let attr2 = fromMaybe "" (lookup "url" attrs)
+  return $ constructor attr1 attr2
+
 parseContentInline :: Parser Content
-parseContentInline = 
-  parseText <|> 
-  (do
-    string "<bold>"
-    content <- parseContentInline
-    string "</bold>"
-    return $ Bold content) <|>
-  (do
-    string "<italic>"
-    content <- parseContentInline
-    string "</italic>"
-    return $ Italic content) <|>
-  (do
-    string "<code>"
-    code <- many (satisfy (/= '<'))
-    string "</code>"
-    return $ Code code)
+parseContentInline = choice
+  [ parseText
+  , parseInlineBold
+  , parseInlineItalic
+  , parseInlineCode
+  ]
 
--- Parse un document XML à partir d'une chaîne
+parseInlineBold :: Parser Content
+parseInlineBold = Bold <$> 
+  (string "<bold>" *> parseContentInline <* string "</bold>")
+
+parseInlineItalic :: Parser Content
+parseInlineItalic = Italic <$>
+  (string "<italic>" *> parseContentInline <* string "</italic>")
+
+parseInlineCode :: Parser Content
+parseInlineCode = Code <$>
+  (string "<code>" *> many (satisfy (/= '<')) <* string "</code>")
+
 parseXML :: String -> Maybe Document
 parseXML input = case runParser parseXMLDocument input of
   Just (doc, rest) | all isSpace rest -> Just doc

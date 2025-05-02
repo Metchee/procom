@@ -1,0 +1,18 @@
+{
+  "header": {
+    "title": "With Formatting"
+  },
+  "body": [
+    [
+      "This is ",
+      {
+        "bold": "bold"
+      },
+      " and ",
+      {
+        "italic": "italic"
+      },
+      " text."
+    ]
+  ]
+}
