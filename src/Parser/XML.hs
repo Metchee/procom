@@ -24,7 +24,6 @@ parseAttribute = (,)
   <*  (char '"' <|> char '\'')
   <*  spaces
 
--- Version plus souple de parseTagOpen
 parseTagOpen :: String -> Parser ()
 parseTagOpen tag = do
   spaces
@@ -62,12 +61,10 @@ parseTagWithAttrs tag contentParser =
       <* spaces <* (string ">" <|> string "/>") <* spaces)
       <*> (contentParser <* spaces <* (parseTagClose tag <|> return ()))
 
--- Parser de document XML corrigé
 parseXMLDocument :: Parser Document
 parseXMLDocument = 
   spaces *>
   (do
-    -- Utiliser une combinaison d'alternatives avec le même type de retour
     (string "<document" <|> string "<?xml") *> return ()
     parseTagOpen "document" <|> (spaces *> many parseAttribute *> spaces *> string ">" *> return ())
     Document <$> parseHeader <*> parseBody
@@ -87,7 +84,7 @@ parseHeader = do
 
 parseBody :: Parser [Content]
 parseBody = (parseTagWithContent "body" (many parseContent)
-          <|> return []) -- Corps vide si manquant
+          <|> return [])
 
 parseContent :: Parser Content
 parseContent = parseParagraph 
@@ -208,5 +205,4 @@ parseXML input =
   case runParser parseXMLDocument input of
     Just (doc, rest) | all isSpace rest -> Just doc
     _ -> 
-      -- Essayons avec un document vide minimal si le parsing normal échoue
       Just (Document (Header "" Nothing Nothing) [])

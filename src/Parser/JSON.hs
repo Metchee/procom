@@ -75,26 +75,17 @@ getString :: JSONValue -> Maybe String
 getString (JSONString s) = Just s
 getString _ = Nothing
 
--- Fonction plus souple pour obtenir l'en-tête
 getHeader :: [(String, JSONValue)] -> Maybe Header
 getHeader obj = do
-  -- Si header est absent, on crée un en-tête minimal
   headerObj <- (lookup "header" obj >>= getObject) <|> Just []
-  
-  -- Recherche du titre, avec valeur par défaut si absent
   let title = (lookup "title" headerObj >>= getString) <|> Just ""
   let author = lookup "author" headerObj >>= getString
   let date = lookup "date" headerObj >>= getString
-  
   return $ Header (fromMaybe "" title) author date
 
--- Fonction plus souple pour obtenir le corps
 getBody :: [(String, JSONValue)] -> Maybe [Content]
 getBody obj = do
-  -- Si body est absent, on retourne une liste vide
   bodyArr <- (lookup "body" obj >>= getArray) <|> Just []
-  
-  -- Convertit chaque élément du tableau en contenu
   result <- (mapM jsonValueToContent bodyArr) <|> Just []
   return $ if null result then [Text ""] else result
 
@@ -103,7 +94,7 @@ jsonToDocument (JSONObject obj) = do
   header <- getHeader obj <|> Just (Header "" Nothing Nothing)
   body <- getBody obj <|> Just []
   return $ Document header body
-jsonToDocument _ = Just (Document (Header "" Nothing Nothing) []) -- Document vide pour les entrées invalides
+jsonToDocument _ = Just (Document (Header "" Nothing Nothing) [])
 
 jsonValueToItem :: JSONValue -> Maybe Item
 jsonValueToItem (JSONObject obj) = do
@@ -114,7 +105,7 @@ jsonValueToItem (JSONArray arr) = do
   contentList <- (mapM jsonValueToContent arr) <|> Just []
   return $ Item contentList
 jsonValueToItem (JSONString s) = Just (Item [Text s])
-jsonValueToItem _ = Just (Item []) -- Élément vide pour les entrées invalides
+jsonValueToItem _ = Just (Item [])
 
 parseParagraphContent :: [(String, JSONValue)] -> Maybe Content
 parseParagraphContent obj = do
@@ -178,18 +169,15 @@ selectContentParser "link" = parseLinkContent
 selectContentParser "image" = parseImageContent
 selectContentParser "codeblock" = parseCodeBlockContent
 selectContentParser "list" = parseListContent
-selectContentParser _ = \obj -> Just (Text (show obj)) -- Conversion générique en texte
+selectContentParser _ = \obj -> Just (Text (show obj))
 
--- Analyse plus souple des valeurs JSON en contenu
 jsonValueToContent :: JSONValue -> Maybe Content
 jsonValueToContent (JSONString s) = Just (Text s)
 jsonValueToContent (JSONObject obj) = do
-  -- D'abord essayons de trouver un champ 'type'
   typeStr <- (lookup "type" obj >>= getString) <|> Just "text"
   result <- selectContentParser typeStr obj
-  return result -- Si le parsing échoue, on retourne un texte par défaut
+  return result
 jsonValueToContent (JSONArray arr) =
-  -- Pour les tableaux, convertir en paragraphe
   Just (Paragraph (catMaybes (map jsonValueToContent arr)))
 jsonValueToContent (JSONNumber n) = Just (Text (show n))
 jsonValueToContent (JSONBool b) = Just (Text (show b))
@@ -199,5 +187,4 @@ parseJSON :: String -> Maybe Document
 parseJSON input = case runParser parseJSONValue input of
   Just (value, rest) | all isSpace rest -> jsonToDocument value
   _ -> 
-    -- Si le parsing échoue, retournons un document minimal
     Just (Document (Header "" Nothing Nothing) [Text "Parse error"])

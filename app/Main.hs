@@ -76,7 +76,6 @@ main = do
      <> progDesc "Convert documents between different formats"
      <> header "mypandoc - a document converter" )
 
--- Version plus sûre qui attrape les exceptions
 safeRun :: Options -> IO ()
 safeRun opts = do
   result <- try (run opts)
@@ -99,7 +98,6 @@ run opts = do
 
 validateOptions :: Options -> IO ()
 validateOptions opts = do
-  -- Validation plus souple
   case outputFormat opts of
     fmt | not (isValidFormat fmt) -> exitWithError (UnsupportedFormat fmt)
     _ -> return ()
@@ -113,16 +111,15 @@ determineFormat opts content = case inputFormat opts of
   Just fmt -> return (stringToFormat fmt)
   Nothing -> case detectFormat content of
     Just fmt -> return fmt
-    Nothing -> return XML  -- Par défaut, essayons XML si rien n'est détecté
+    Nothing -> return XML
 
 parseDocument :: Format -> String -> IO Document
 parseDocument format content = case parseByFormat format content of
   Just d -> return d
   Nothing -> do
-    -- Si le format spécifié échoue, essayer tous les formats
     case parseAuto content of
       Just d -> return d
-      Nothing -> return $ Document (Header "" Nothing Nothing) []  -- Document vide en dernier recours
+      Nothing -> return $ Document (Header "" Nothing Nothing) []
 
 writeOutput :: Options -> Document -> IO ()
 writeOutput opts doc =
@@ -131,7 +128,6 @@ writeOutput opts doc =
        Just file -> safeWriteFile file output
        Nothing   -> putStr output
 
--- Fonction corrigée avec un type explicite pour éviter l'ambiguïté
 safeWriteFile :: FilePath -> String -> IO ()
 safeWriteFile path content = do
   result <- E.try (writeFile path content) :: IO (Either IOException ())
@@ -143,15 +139,15 @@ isValidFormat :: String -> Bool
 isValidFormat "xml" = True
 isValidFormat "json" = True
 isValidFormat "markdown" = True
-isValidFormat "md" = True  -- Accepter aussi "md" comme abréviation
+isValidFormat "md" = True
 isValidFormat _ = False
 
 stringToFormat :: String -> Format
 stringToFormat "xml" = XML
 stringToFormat "json" = JSON
 stringToFormat "markdown" = Markdown
-stringToFormat "md" = Markdown  -- Accepter aussi "md" comme abréviation
-stringToFormat _ = XML  -- Par défaut XML
+stringToFormat "md" = Markdown
+stringToFormat _ = XML
 
 formatByFormat :: Format -> Document -> String
 formatByFormat XML = formatXML
@@ -164,8 +160,7 @@ readFileOrExit path = E.catch (readFile path) handleReadError
     handleReadError :: IOException -> IO String
     handleReadError e = do
       hPutStrLn stderr ("Erreur lors de la lecture du fichier: " ++ show e)
-      return ""  -- Retourner une chaîne vide plutôt que de quitter
-      -- exitWithError (FileNotFound path)
+      return ""
 
 isJust :: Maybe a -> Bool
 isJust (Just _) = True

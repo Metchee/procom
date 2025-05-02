@@ -16,7 +16,6 @@ import Data.Char (isSpace)
 
 data Format = XML | JSON | Markdown deriving (Show, Eq)
 
--- Détection de format plus souple
 detectFormat :: String -> Maybe Format
 detectFormat input =
   let trimmed = dropWhile isSpace input
@@ -26,14 +25,13 @@ detectFormat input =
       | "---" `isPrefixOf` trimmed 
         || "title:" `isInfixOf` trimmed
         || (not (null trimmed) && all isSpace trimmed) -> Just Markdown
-      | otherwise -> Just XML  -- Par défaut, on essaie XML comme dernier recours
+      | otherwise -> Just XML
 
 parseByFormat :: Format -> String -> Maybe Document
 parseByFormat XML = parseXML
 parseByFormat JSON = parseJSON
 parseByFormat Markdown = parseMarkdown
 
--- Essaie tous les parseurs si le format n'est pas spécifié
 parseAuto :: String -> Maybe Document
 parseAuto input = 
   let tryParse format = parseByFormat format input

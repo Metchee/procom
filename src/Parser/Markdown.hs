@@ -24,26 +24,22 @@ parseMarkdownDocument = do
 
 parseMarkdownHeader :: Parser Header
 parseMarkdownHeader = do
-  fields <- parseHeaderFields <|> return []
-  let title = findField "title" fields
-  let author = findOptionalField "author" fields
-  let date = findOptionalField "date" fields
-  return $ Header title author date
-
-parseHeaderFields :: Parser [(String, String)]
-parseHeaderFields = do
   string "---"
   spaces
   fields <- many parseHeaderField
   spaces
   string "---"
   spaces
-  return fields
+  return $ Header 
+    (findField "title" fields)
+    (findOptionalField "author" fields)
+    (findOptionalField "date" fields)
 
 parseHeaderField :: Parser (String, String)
 parseHeaderField = do
   key <- parseFieldKey
   value <- parseFieldValue
+  spaces
   return (key, value)
 
 parseFieldKey :: Parser String
@@ -56,111 +52,115 @@ parseFieldKey = do
   return key
 
 parseFieldValue :: Parser String
-parseFieldValue = do
-  value <- some (satisfy (/= '\n')) <|> return ""
-  spaces
-  return (dropWhile isSpace value)
+parseFieldValue = some (satisfy (/= '\n'))
 
 parseMarkdownBody :: Parser [Content]
 parseMarkdownBody = many parseMarkdownContent
 
 parseMarkdownContent :: Parser Content
-parseMarkdownContent = parseParagraph 
-                    <|> parseSection 
-                    <|> parseCodeBlock 
-                    <|> parseList
-                    <|> parseText
+parseMarkdownContent = 
+  parseList 
+  <|> parseSection 
+  <|> parseCodeBlock 
+  <|> parseParagraph 
+  <|> parseText
 
 parseParagraph :: Parser Content
 parseParagraph = do
-  content <- some parseInlineContent
-  spaces
-  return $ Paragraph content
+  lines <- some parseInlineContent
+  many (char '\n')
+  return $ Paragraph lines
 
 parseSection :: Parser Content
 parseSection = do
   level <- some (char '#')
   spaces
-  title <- some (satisfy (/= '\n')) <|> return ""
-  spaces
-  content <- many parseMarkdownContent <|> return []
-  return $ Section (dropWhile isSpace title) content
+  title <- some (satisfy (/= '\n'))
+  many (char '\n')
+  contents <- many parseMarkdownContent
+  return $ Section title contents
 
 parseCodeBlock :: Parser Content
 parseCodeBlock = do
   string "```"
-  spaces
-  code <- tillString "```" <|> return ""
-  string "```" <|> return ""
-  spaces
+  optional (some (satisfy (/= '\n')))
+  many (char '\n')
+  code <- tillString "```"
+  string "```"
+  many (char '\n')
   return $ CodeBlock code
 
 parseList :: Parser Content
 parseList = do
   items <- some parseListItem
   return $ List items
-  where
-    parseListItem = do
-      spaces
-      char '-' <|> char '*' <|> char '+'
-      spaces
-      content <- many parseInlineContent <|> return [Text ""]
-      spaces
-      return $ Item content
+
+parseListItem :: Parser Item
+parseListItem = do
+  spaces
+  char '-' <|> char '*' <|> char '+'
+  spaces
+  content <- many parseInlineContent
+  many (char '\n')
+  return $ Item content
 
 parseText :: Parser Content
 parseText = do
   text <- some (satisfy (/= '\n'))
-  spaces
+  many (char '\n')
   return $ Text text
 
 parseInlineContent :: Parser Content
-parseInlineContent = parseItalic <|> parseBold <|>
-  parseCode <|> parseLink <|> parseImage <|> parseSimpleText
-
-parseItalic :: Parser Content
-parseItalic = do
-  char '*'
-  content <- parseSimpleText <|> return (Text "")
-  char '*'
-  return $ Italic content
+parseInlineContent = 
+  parseBold 
+  <|> parseItalic 
+  <|> parseCode 
+  <|> parseLink 
+  <|> parseImage 
+  <|> parseSimpleText
 
 parseBold :: Parser Content
 parseBold = do
   string "**"
-  content <- parseSimpleText <|> return (Text "")
+  content <- tillString "**"
   string "**"
-  return $ Bold content
+  return $ Bold (Text content)
+
+parseItalic :: Parser Content
+parseItalic = do
+  char '*'
+  content <- tillString "*"
+  char '*'
+  return $ Italic (Text content)
 
 parseCode :: Parser Content
 parseCode = do
   char '`'
-  code <- many (satisfy (/= '`')) <|> return ""
+  code <- tillString "`"
   char '`'
   return $ Code code
 
 parseLink :: Parser Content
 parseLink = do
   char '['
-  text <- many (satisfy (/= ']')) <|> return ""
+  text <- tillString "]"
   string "]("
-  url <- many (satisfy (/= ')')) <|> return ""
+  url <- tillString ")"
   char ')'
   return $ Link text url
 
 parseImage :: Parser Content
 parseImage = do
   string "!["
-  alt <- many (satisfy (/= ']')) <|> return ""
+  alt <- tillString "]"
   string "]("
-  url <- many (satisfy (/= ')')) <|> return ""
+  url <- tillString ")"
   char ')'
   return $ Image alt url
 
 parseSimpleText :: Parser Content
-parseSimpleText = Text <$>
-  some (satisfy (\c -> c /= '*' && c /= '`' && c /= '[' && c /= '\n'))
-  <|> return (Text "")
+parseSimpleText = 
+  Text <$> some (satisfy (\c -> c /= '*' && c /= '`' && c /= '[' && c /= '!' && c /= '\n'))
 
 parseMarkdown :: String -> Maybe Document
 parseMarkdown input = 
