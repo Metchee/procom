@@ -11,7 +11,7 @@ import Parser.Core
 import Document.Types
 import Control.Applicative (many, some, (<|>))
 import Data.Char (isSpace)
-import Data.Maybe (catMaybes, fromMaybe)
+import Data.Maybe (catMaybes)
 
 data JSONValue
   = JSONString String
@@ -77,87 +77,81 @@ getString _ = Nothing
 
 getHeader :: [(String, JSONValue)] -> Maybe Header
 getHeader obj = do
-  headerObj <- (lookup "header" obj >>= getObject) <|> Just []
-  let title = (lookup "title" headerObj >>= getString) <|> Just ""
+  headerObj <- lookup "header" obj >>= getObject
+  title <- lookup "title" headerObj >>= getString
   let author = lookup "author" headerObj >>= getString
   let date = lookup "date" headerObj >>= getString
-  return $ Header (fromMaybe "" title) author date
+  return $ Header title author date
 
 getBody :: [(String, JSONValue)] -> Maybe [Content]
 getBody obj = do
-  bodyArr <- (lookup "body" obj >>= getArray) <|> Just []
-  result <- (mapM jsonValueToContent bodyArr) <|> Just []
-  return $ if null result then [Text ""] else result
+  bodyArr <- lookup "body" obj >>= getArray
+  mapM jsonValueToContent bodyArr
 
 jsonToDocument :: JSONValue -> Maybe Document
 jsonToDocument (JSONObject obj) = do
-  header <- getHeader obj <|> Just (Header "" Nothing Nothing)
-  body <- getBody obj <|> Just []
+  header <- getHeader obj
+  body <- getBody obj
   return $ Document header body
-jsonToDocument _ = Just (Document (Header "" Nothing Nothing) [])
+jsonToDocument _ = Nothing
 
 jsonValueToItem :: JSONValue -> Maybe Item
 jsonValueToItem (JSONObject obj) = do
-  content <- (lookup "content" obj >>= getArray) <|> Just []
-  contentList <- (mapM jsonValueToContent content) <|> Just []
+  content <- lookup "content" obj >>= getArray
+  contentList <- mapM jsonValueToContent content
   return $ Item contentList
-jsonValueToItem (JSONArray arr) = do
-  contentList <- (mapM jsonValueToContent arr) <|> Just []
-  return $ Item contentList
-jsonValueToItem (JSONString s) = Just (Item [Text s])
-jsonValueToItem _ = Just (Item [])
+jsonValueToItem _ = Nothing
 
 parseParagraphContent :: [(String, JSONValue)] -> Maybe Content
 parseParagraphContent obj = do
-  content <- (lookup "content" obj >>= getArray) <|> Just []
-  contentList <- (mapM jsonValueToContent content) <|> Just [Text ""]
+  content <- lookup "content" obj >>= getArray
+  contentList <- mapM jsonValueToContent content
   return $ Paragraph contentList
 
 parseSectionContent :: [(String, JSONValue)] -> Maybe Content
 parseSectionContent obj = do
-  title <- (lookup "title" obj >>= getString) <|> Just ""
-  content <- (lookup "content" obj >>= getArray) <|> Just []
-  contentList <- (mapM jsonValueToContent content) <|> Just []
+  title <- lookup "title" obj >>= getString
+  content <- lookup "content" obj >>= getArray
+  contentList <- mapM jsonValueToContent content
   return $ Section title contentList
 
 parseItalicContent :: [(String, JSONValue)] -> Maybe Content
 parseItalicContent obj = do
-  content <- (lookup "content" obj >>= jsonValueToContent) <|> Just (Text "")
+  content <- lookup "content" obj >>= jsonValueToContent
   return $ Italic content
 
 parseBoldContent :: [(String, JSONValue)] -> Maybe Content
 parseBoldContent obj = do
-  content <- (lookup "content" obj >>= jsonValueToContent) <|> Just (Text "")
+  content <- lookup "content" obj >>= jsonValueToContent
   return $ Bold content
 
 parseCodeContent :: [(String, JSONValue)] -> Maybe Content
 parseCodeContent obj = do
-  code <- (lookup "content" obj >>= getString) <|> Just ""
+  code <- lookup "content" obj >>= getString
   return $ Code code
 
 parseLinkContent :: [(String, JSONValue)] -> Maybe Content
 parseLinkContent obj = do
-  text <- ((lookup "text" obj >>= getString) <|> 
-          (lookup "content" obj >>= getString)) <|> Just "link"
-  url <- (lookup "url" obj >>= getString) <|> Just "#"
+  text <- lookup "text" obj >>= getString
+  url <- lookup "url" obj >>= getString
   return $ Link text url
 
 parseImageContent :: [(String, JSONValue)] -> Maybe Content
 parseImageContent obj = do
-  alt <- (lookup "alt" obj >>= getString) <|> Just "image"
-  url <- (lookup "url" obj >>= getString) <|> Just "#"
+  alt <- lookup "alt" obj >>= getString
+  url <- lookup "url" obj >>= getString
   return $ Image alt url
 
 parseCodeBlockContent :: [(String, JSONValue)] -> Maybe Content
 parseCodeBlockContent obj = do
-  code <- (lookup "content" obj >>= getString) <|> Just ""
+  code <- lookup "content" obj >>= getString
   return $ CodeBlock code
 
 parseListContent :: [(String, JSONValue)] -> Maybe Content
 parseListContent obj = do
-  items <- (lookup "items" obj >>= getArray) <|> Just []
-  itemsList <- (mapM jsonValueToItem items) <|> Just []
-  return $ List (if null itemsList then [Item [Text ""]] else itemsList)
+  items <- lookup "items" obj >>= getArray
+  itemsList <- mapM jsonValueToItem items
+  return $ List itemsList
 
 selectContentParser :: String -> [(String, JSONValue)] -> Maybe Content
 selectContentParser "paragraph" = parseParagraphContent
@@ -169,22 +163,17 @@ selectContentParser "link" = parseLinkContent
 selectContentParser "image" = parseImageContent
 selectContentParser "codeblock" = parseCodeBlockContent
 selectContentParser "list" = parseListContent
-selectContentParser _ = \obj -> Just (Text (show obj))
+selectContentParser _ = const Nothing
 
 jsonValueToContent :: JSONValue -> Maybe Content
 jsonValueToContent (JSONString s) = Just (Text s)
 jsonValueToContent (JSONObject obj) = do
-  typeStr <- (lookup "type" obj >>= getString) <|> Just "text"
-  result <- selectContentParser typeStr obj
-  return result
-jsonValueToContent (JSONArray arr) =
-  Just (Paragraph (catMaybes (map jsonValueToContent arr)))
-jsonValueToContent (JSONNumber n) = Just (Text (show n))
-jsonValueToContent (JSONBool b) = Just (Text (show b))
-jsonValueToContent JSONNull = Just (Text "")
+  typeStr <- lookup "type" obj >>= getString
+  selectContentParser typeStr obj
+jsonValueToContent _ = Nothing
 
 parseJSON :: String -> Maybe Document
 parseJSON input = case runParser parseJSONValue input of
+  Just (value, "") -> jsonToDocument value
   Just (value, rest) | all isSpace rest -> jsonToDocument value
-  _ -> 
-    Just (Document (Header "" Nothing Nothing) [Text "Parse error"])
+  _ -> Nothing

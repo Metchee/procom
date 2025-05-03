@@ -31,9 +31,9 @@ formatError (UnsupportedFormat fmt) = "Error: Unsupported format - " ++ fmt
 formatError (OutputError msg) = "Error: Output error - " ++ msg
 
 showUsage :: IO ()
-showUsage =
-  putStrLn "USAGE: ./mypandoc -i ifile -f oformat [-o ofile] [-e iformat]" >>
-  putStrLn "  ifile       path to the file to convert" >>
-  putStrLn "  oformat     output format (xml, json, markdown)" >>
-  putStrLn "  ofile       path to the output file" >>
+showUsage = do
+  putStrLn "USAGE: ./mypandoc -i ifile -f oformat [-o ofile] [-e iformat]"
+  putStrLn "  ifile       path to the file to convert"
+  putStrLn "  oformat     output format (xml, json, markdown)"
+  putStrLn "  ofile       path to the output file"
   putStrLn "  iformat     input format (xml, json, markdown)"
