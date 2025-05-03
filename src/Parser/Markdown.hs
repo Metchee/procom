@@ -24,16 +24,34 @@ parseMarkdownDocument = do
 
 parseMarkdownHeader :: Parser Header
 parseMarkdownHeader = do
-  string "---"
-  spaces
+  fields <- parseHeaderFields
+  return $ buildHeader fields
+
+parseHeaderFields :: Parser [(String, String)]
+parseHeaderFields = do
+  parseHeaderStart
   fields <- many parseHeaderField
-  spaces
-  string "---"
-  spaces
-  return $ Header 
-    (findField "title" fields)
-    (findOptionalField "author" fields)
-    (findOptionalField "date" fields)
+  parseHeaderEnd
+  return fields
+
+parseHeaderStart :: Parser ()
+parseHeaderStart =
+  string "---" >>
+  spaces >>
+  return ()
+
+parseHeaderEnd :: Parser ()
+parseHeaderEnd =
+  spaces >>
+  string "---" >>
+  spaces >>
+  return ()
+
+buildHeader :: [(String, String)] -> Header
+buildHeader fields = Header 
+  (findField "title" fields)
+  (findOptionalField "author" fields)
+  (findOptionalField "date" fields)
 
 parseHeaderField :: Parser (String, String)
 parseHeaderField = do
@@ -152,15 +170,21 @@ parseLink = do
 parseImage :: Parser Content
 parseImage = do
   string "!["
-  alt <- tillString "]"
+  alt <- parseAltText
   string "]("
-  url <- tillString ")"
+  url <- parseImageUrl
   char ')'
   return $ Image alt url
+  where
+    parseAltText = tillString "]"
+    parseImageUrl = tillString ")"
 
 parseSimpleText :: Parser Content
 parseSimpleText = 
-  Text <$> some (satisfy (\c -> c /= '*' && c /= '`' && c /= '[' && c /= '!' && c /= '\n'))
+  Text <$> some (satisfy notSpecialChar)
+  where
+    notSpecialChar c = c /= '*' && c /= '`' && 
+                       c /= '[' && c /= '!' && c /= '\n'
 
 parseMarkdown :: String -> Maybe Document
 parseMarkdown input = 

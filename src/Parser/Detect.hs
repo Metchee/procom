@@ -19,13 +19,30 @@ data Format = XML | JSON | Markdown deriving (Show, Eq)
 detectFormat :: String -> Maybe Format
 detectFormat input =
   let trimmed = dropWhile isSpace input
-  in case () of
-    _ | any (\tag -> tag `isInfixOf` trimmed) ["<document", "<?xml", "</document>", "<header"] -> Just XML
-      | any (\tag -> tag `isPrefixOf` trimmed) ["{", "{\""] || "\"header\"" `isInfixOf` trimmed -> Just JSON
-      | "---" `isPrefixOf` trimmed 
-        || "title:" `isInfixOf` trimmed
-        || (not (null trimmed) && all isSpace trimmed) -> Just Markdown
-      | otherwise -> Just XML
+  in detectFormatTrimmed trimmed
+
+detectFormatTrimmed :: String -> Maybe Format
+detectFormatTrimmed trimmed
+  | isXMLFormat trimmed = Just XML
+  | isJSONFormat trimmed = Just JSON
+  | isMarkdownFormat trimmed = Just Markdown
+  | otherwise = Just XML
+
+isXMLFormat :: String -> Bool
+isXMLFormat text = 
+  any (\tag -> tag `isInfixOf` text) 
+      ["<document", "<?xml", "</document>", "<header"]
+
+isJSONFormat :: String -> Bool
+isJSONFormat text =
+  any (\tag -> tag `isPrefixOf` text) ["{", "{\""] || 
+  "\"header\"" `isInfixOf` text
+
+isMarkdownFormat :: String -> Bool
+isMarkdownFormat text =
+  "---" `isPrefixOf` text ||
+  "title:" `isInfixOf` text ||
+  (not (null text) && all isSpace text)
 
 parseByFormat :: Format -> String -> Maybe Document
 parseByFormat XML = parseXML

@@ -25,26 +25,25 @@ parseAttribute = (,)
   <*  spaces
 
 parseTagOpen :: String -> Parser ()
-parseTagOpen tag = do
-  spaces
-  string "<"
-  spaces
-  string tag
-  spaces
-  string ">"
-  spaces
-  return ()
-  <|> do
-    spaces
-    string "<"
-    spaces
-    string tag
-    spaces
-    many parseAttribute
-    spaces
-    string ">"
-    spaces
-    return ()
+parseTagOpen tag = parseSimpleTag <|> parseWithAttributes
+  where
+    parseSimpleTag = parseTagPrefix >> string ">" >> tagSuffix
+    
+    parseWithAttributes = 
+      parseTagPrefix >> 
+      many parseAttribute >>= \_ ->
+      spaces >>
+      string ">" >>
+      tagSuffix
+    
+    parseTagPrefix =
+      spaces >>
+      string "<" >>
+      spaces >>
+      string tag >>
+      spaces
+      
+    tagSuffix = spaces >> return ()
 
 parseTagClose :: String -> Parser ()
 parseTagClose tag = 
@@ -56,35 +55,71 @@ parseTagWithContent tag contentParser =
   parseTagOpen tag *> spaces *> contentParser <* spaces <* parseTagClose tag
 
 parseTagWithAttrs :: String -> Parser a -> Parser ([(String, String)], a)
-parseTagWithAttrs tag contentParser = 
-  (,) <$> (string ("<" ++ tag) *> spaces *> many parseAttribute
-      <* spaces <* (string ">" <|> string "/>") <* spaces)
-      <*> (contentParser <* spaces <* (parseTagClose tag <|> return ()))
+parseTagWithAttrs tag contentParser =
+  parseAttrsPrefix tag >>= \attrs ->
+  contentParser >>= \content ->
+  parseAttrsSuffix tag >>
+  return (attrs, content)
+
+parseAttrsPrefix :: String -> Parser [(String, String)]
+parseAttrsPrefix tag =
+  string ("<" ++ tag) >>
+  spaces >>
+  many parseAttribute >>= \attrs ->
+  spaces >>
+  (string ">" <|> string "/>") >>
+  spaces >>
+  return attrs
+
+parseAttrsSuffix :: String -> Parser ()
+parseAttrsSuffix tag =
+  spaces >>
+  (parseTagClose tag <|> return ())
 
 parseXMLDocument :: Parser Document
-parseXMLDocument = 
-  spaces *>
-  (do
-    (string "<document" <|> string "<?xml") *> return ()
-    parseTagOpen "document" <|> (spaces *> many parseAttribute *> spaces *> string ">" *> return ())
-    Document <$> parseHeader <*> parseBody
-  ) <*
-  (parseTagClose "document" <|> return ()) <*
-  spaces
+parseXMLDocument =
+  spaces >>
+  parseDocStart >>
+  parseHeader >>= \header ->
+  parseBody >>= \body ->
+  parseDocEnd >>
+  return (Document header body)
+
+parseDocStart :: Parser ()
+parseDocStart =
+  (string "<document" <|> string "<?xml") >>
+  return () >>
+  (parseTagOpen "document" <|> parseDocStartAlt)
+  where
+    parseDocStartAlt =
+      spaces >>
+      many parseAttribute >>= \_ ->
+      spaces >>
+      string ">" >>
+      return ()
+
+parseDocEnd :: Parser ()
+parseDocEnd =
+  (parseTagClose "document" <|> return ()) >>
+  spaces >>
+  return ()
 
 parseHeader :: Parser Header
-parseHeader = do
-  (attrs, _) <- parseTagWithAttrs "header" (return ()) <|> parseEmptyHeader
-  return $ Header 
-    (fromMaybe "" (lookup "title" attrs))
-    (lookup "author" attrs)
-    (lookup "date" attrs)
+parseHeader =
+  (parseTagWithAttrs "header" (return ()) <|> parseEmptyHeader) >>= \pair ->
+  let (attrs, _) = pair
+  in return $ Header 
+       (fromMaybe "" (lookup "title" attrs))
+       (lookup "author" attrs)
+       (lookup "date" attrs)
   where
     parseEmptyHeader = return ([], ())
 
 parseBody :: Parser [Content]
-parseBody = (parseTagWithContent "body" (many parseContent)
-          <|> return [])
+parseBody =
+  let parseBodyContents = parseTagWithContent "body" (many parseContent)
+      parseEmptyBody = return []
+  in parseBodyContents <|> parseEmptyBody
 
 parseContent :: Parser Content
 parseContent = parseParagraph 
