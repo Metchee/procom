@@ -1,0 +1,11 @@
+<document>
+  <header title="Test Document"></header>
+  <body>
+    <paragraph>
+      This is a test document for Pandoc.
+    </paragraph>
+    <paragraph>
+      It contains multiple paragraphs.
+    </paragraph>
+  </body>
+</document>

@@ -15,7 +15,7 @@ formatMarkdown doc =
   let
     header = formatHeader (docHeader doc)
     body = trimEnd (formatBody (docBody doc))
-  in header ++ "\n" ++ body
+  in header ++ body
 
 trimEnd :: String -> String
 trimEnd = reverse . dropWhile (== '\n') . reverse
@@ -26,7 +26,7 @@ formatHeader header =
   "title: " ++ headerTitle header ++ "\n" ++
   formatOptionalField "author" (headerAuthor header) ++
   formatOptionalField "date" (headerDate header) ++
-  "---\n"
+  "---\n\n"
   where
     formatOptionalField _ Nothing = ""
     formatOptionalField name (Just value) = name ++ ": " ++ value ++ "\n"
@@ -35,7 +35,7 @@ formatBody :: [Content] -> String
 formatBody = concatMap formatContent
 
 formatContent :: Content -> String
-formatContent (Text text) = text ++ "\n"
+formatContent (Text text) = text ++ "\n\n"
 formatContent (Italic content) = "*" ++ formatContentInline content ++ "*"
 formatContent (Bold content) = "**" ++ formatContentInline content ++ "**"
 formatContent (Code code) = "`" ++ code ++ "`"
@@ -64,4 +64,12 @@ formatContentInline (Bold content) = "**" ++
 formatContentInline (Code code) = "`" ++ code ++ "`"
 formatContentInline (Link text url) = "[" ++ text ++ "](" ++ url ++ ")"
 formatContentInline (Image alt url) = "![" ++ alt ++ "](" ++ url ++ ")"
-formatContentInline _ = ""
+formatContentInline (Paragraph contents) =
+  concatMap formatContentInline contents
+formatContentInline (Section title _) = "# " ++ title
+formatContentInline (CodeBlock code) = "```" ++ code ++ "```"
+formatContentInline (List items) = concatMap formatItemInline items
+
+formatItemInline :: Item -> String
+formatItemInline (Item contents) =
+  "- " ++ concatMap formatContentInline contents
