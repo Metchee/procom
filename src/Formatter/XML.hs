@@ -19,14 +19,14 @@ formatXML doc =
 
 formatHeader :: Header -> String
 formatHeader header =
-  "  <header title=\"" ++ headerTitle header ++ "\"" ++
+  "  <header title=\"" ++ escapeXML (headerTitle header) ++ "\"" ++
   formatOptionalAttr "author" (headerAuthor header) ++
   formatOptionalAttr "date" (headerDate header) ++
   "></header>\n"
   where
     formatOptionalAttr _ Nothing = ""
     formatOptionalAttr name (Just value) = " " ++
-      name ++ "=\"" ++ value ++ "\""
+      name ++ "=\"" ++ escapeXML value ++ "\""
 
 formatBody :: [Content] -> String
 formatBody contents =
@@ -86,7 +86,19 @@ formatContentInline (Link text url) = "<link text=\"" ++
   escapeXML text ++ "\" url=\"" ++ escapeXML url ++ "\"></link>"
 formatContentInline (Image alt url) = "<image alt=\"" ++
   escapeXML alt ++ "\" url=\"" ++ escapeXML url ++ "\"></image>"
-formatContentInline _ = ""
+formatContentInline (Paragraph contents) =
+  concatMap formatContentInline contents
+formatContentInline (Section title contents) =
+  "<section title=\"" ++ escapeXML title ++ "\">" ++
+  concatMap formatContentInline contents ++ "</section>"
+formatContentInline (CodeBlock code) =
+  "<codeblock>" ++ escapeXML code ++ "</codeblock>"
+formatContentInline (List items) =
+  "<list>" ++ concatMap formatItemInline items ++ "</list>"
+
+formatItemInline :: Item -> String
+formatItemInline (Item contents) =
+  "<item>" ++ concatMap formatContentInline contents ++ "</item>"
 
 escapeXML :: String -> String
 escapeXML = concatMap escapeChar

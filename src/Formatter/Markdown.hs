@@ -36,13 +36,13 @@ formatBody = concatMap formatContent
 
 formatContent :: Content -> String
 formatContent (Text text) = text ++ "\n\n"
-formatContent (Italic content) = "*" ++ formatContentInline content ++ "*"
-formatContent (Bold content) = "**" ++ formatContentInline content ++ "**"
-formatContent (Code code) = "`" ++ code ++ "`"
-formatContent (Link text url) = "[" ++ text ++ "](" ++ url ++ ")"
-formatContent (Image alt url) = "![" ++ alt ++ "](" ++ url ++ ")"
+formatContent (Italic content) = "*" ++ formatContentInline content ++ "*\n\n"
+formatContent (Bold content) = "**" ++ formatContentInline content ++ "**\n\n"
+formatContent (Code code) = "`" ++ code ++ "`\n\n"
+formatContent (Link text url) = "[" ++ text ++ "](" ++ url ++ ")\n\n"
+formatContent (Image alt url) = "![" ++ alt ++ "](" ++ url ++ ")\n\n"
 formatContent (Paragraph contents) = 
-  concatMap formatContentInline contents ++ "\n\n"
+  concatMap formatParagraphContent contents ++ "\n\n"
 formatContent (Section title contents) = 
   "# " ++ title ++ "\n\n" ++
   concatMap formatContent contents
@@ -50,6 +50,15 @@ formatContent (CodeBlock code) =
   "```\n" ++ code ++ "\n```\n\n"
 formatContent (List items) = 
   concatMap formatItem items ++ "\n"
+
+formatParagraphContent :: Content -> String
+formatParagraphContent (Italic content) = "*" ++ formatContentInline content ++ "* "
+formatParagraphContent (Bold content) = "**" ++ formatContentInline content ++ "** "
+formatParagraphContent (Code code) = "`" ++ code ++ "` "
+formatParagraphContent (Link text url) = "[" ++ text ++ "](" ++ url ++ ") "
+formatParagraphContent (Image alt url) = "![" ++ alt ++ "](" ++ url ++ ") "
+formatParagraphContent (Text text) = text ++ " "
+formatParagraphContent _ = ""
 
 formatItem :: Item -> String
 formatItem (Item contents) = 
@@ -73,3 +82,7 @@ formatContentInline (List items) = concatMap formatItemInline items
 formatItemInline :: Item -> String
 formatItemInline (Item contents) =
   "- " ++ concatMap formatContentInline contents
+
+-- Fonction utilitaire pour nettoyer les espaces redondants
+cleanSpaces :: String -> String
+cleanSpaces = unwords . words

@@ -12,6 +12,7 @@ import Document.Types
 import Control.Applicative (many, some, (<|>))
 import Data.Char (isSpace)
 import Data.Maybe (catMaybes, fromMaybe)
+import Data.List (isPrefixOf)
 
 data JSONValue
   = JSONString String
@@ -75,116 +76,161 @@ getString :: JSONValue -> Maybe String
 getString (JSONString s) = Just s
 getString _ = Nothing
 
+getNumber :: JSONValue -> Maybe Int
+getNumber (JSONNumber n) = Just n
+getNumber _ = Nothing
+
+getBool :: JSONValue -> Maybe Bool
+getBool (JSONBool b) = Just b
+getBool _ = Nothing
+
 getHeader :: [(String, JSONValue)] -> Maybe Header
 getHeader obj = do
-  headerObj <- (lookup "header" obj >>= getObject) <|> Just []
-  let title = (lookup "title" headerObj >>= getString) <|> Just ""
+  headerObj <- lookup "header" obj >>= getObject
+  let title = lookup "title" headerObj >>= getString
   let author = lookup "author" headerObj >>= getString
   let date = lookup "date" headerObj >>= getString
   return $ Header (fromMaybe "" title) author date
 
 getBody :: [(String, JSONValue)] -> Maybe [Content]
 getBody obj = do
-  bodyArr <- (lookup "body" obj >>= getArray) <|> Just []
-  result <- (mapM jsonValueToContent bodyArr) <|> Just []
-  return $ if null result then [Text ""] else result
+  bodyArr <- lookup "body" obj >>= getArray
+  mapM jsonValueToContent bodyArr
+
+parseJSON :: String -> Maybe Document
+parseJSON input = 
+  -- D'abord, essayons d'analyser le JSON normalement
+  case runParser parseJSONValue input of
+    Just (value, rest) | all isSpace rest -> jsonToDocument value
+    -- Si ça échoue, vérifions si c'est un JSON "stringifié"
+    _ -> case parseStringifiedJSON input of
+           Just doc -> Just doc
+           Nothing -> Nothing
+
+-- Parser pour le JSON "stringifié" (quand le JSON est encapsulé dans une chaîne)
+parseStringifiedJSON :: String -> Maybe Document
+parseStringifiedJSON input = 
+  -- Cas particulier pour les chaînes qui ressemblent à du JSON brut
+  if "[(" `isPrefixOf` input || "{" `isPrefixOf` input then
+    Just (Document (Header "" Nothing Nothing) [Text input])
+  else 
+    Nothing
 
 jsonToDocument :: JSONValue -> Maybe Document
 jsonToDocument (JSONObject obj) = do
-  header <- getHeader obj <|> Just (Header "" Nothing Nothing)
-  body <- getBody obj <|> Just []
+  header <- getHeader obj
+  body <- getBody obj
   return $ Document header body
-jsonToDocument _ = Just (Document (Header "" Nothing Nothing) [])
+jsonToDocument _ = Nothing
 
-jsonValueToItem :: JSONValue -> Maybe Item
-jsonValueToItem (JSONObject obj) = do
-  content <- (lookup "content" obj >>= getArray) <|> Just []
-  contentList <- (mapM jsonValueToContent content) <|> Just []
-  return $ Item contentList
-jsonValueToItem (JSONArray arr) = do
-  contentList <- (mapM jsonValueToContent arr) <|> Just []
-  return $ Item contentList
-jsonValueToItem (JSONString s) = Just (Item [Text s])
-jsonValueToItem _ = Just (Item [])
+jsonValueToContent :: JSONValue -> Maybe Content
+jsonValueToContent (JSONString s) = 
+  -- Cas spécial pour les chaînes qui contiennent du JSON brut
+  if "[(" `isPrefixOf` s || "{" `isPrefixOf` s then
+    Just (Text s)
+  else
+    Just (Text s)
+jsonValueToContent (JSONArray arr) = 
+  let contents = catMaybes (map jsonValueToContent arr)
+  in Just (Paragraph contents)
+jsonValueToContent (JSONObject obj) =
+  parseSpecialObject obj <|> parseStandardObject obj <|> Just (Text (show obj))
 
-parseParagraphContent :: [(String, JSONValue)] -> Maybe Content
-parseParagraphContent obj = do
-  content <- (lookup "content" obj >>= getArray) <|> Just []
-  contentList <- (mapM jsonValueToContent content) <|> Just [Text ""]
-  return $ Paragraph contentList
+parseSpecialObject :: [(String, JSONValue)] -> Maybe Content
+parseSpecialObject obj =
+  parseItalic obj <|> parseBold obj <|> parseCode obj <|> 
+  parseLink obj <|> parseImage obj <|> parseList obj <|> parseSection obj
 
-parseSectionContent :: [(String, JSONValue)] -> Maybe Content
-parseSectionContent obj = do
-  title <- (lookup "title" obj >>= getString) <|> Just ""
-  content <- (lookup "content" obj >>= getArray) <|> Just []
-  contentList <- (mapM jsonValueToContent content) <|> Just []
-  return $ Section title contentList
+parseItalic :: [(String, JSONValue)] -> Maybe Content
+parseItalic obj = do
+  content <- lookup "italic" obj >>= getString
+  return (Paragraph [Italic (Text content)])
+
+parseBold :: [(String, JSONValue)] -> Maybe Content
+parseBold obj = do
+  content <- lookup "bold" obj >>= getString
+  return (Paragraph [Bold (Text content)])
+
+parseCode :: [(String, JSONValue)] -> Maybe Content
+parseCode obj = do
+  content <- lookup "code" obj >>= getString
+  return (Paragraph [Code content])
+
+parseLink :: [(String, JSONValue)] -> Maybe Content
+parseLink obj = do
+  text <- lookup "text" obj >>= getString
+  url <- lookup "url" obj >>= getString
+  return (Link text url)
+
+parseImage :: [(String, JSONValue)] -> Maybe Content
+parseImage obj = do
+  alt <- lookup "alt" obj >>= getString
+  url <- lookup "url" obj >>= getString
+  return (Image alt url)
+
+parseList :: [(String, JSONValue)] -> Maybe Content
+parseList obj = do
+  guard $ lookup "type" obj == Just (JSONString "list")
+  items <- lookup "items" obj >>= getArray
+  itemsList <- mapM parseListItem items
+  return (List itemsList)
+
+parseListItem :: JSONValue -> Maybe Item
+parseListItem (JSONObject obj) = do
+  contentArr <- lookup "content" obj >>= getArray
+  contents <- mapM jsonValueToContent contentArr
+  return (Item contents)
+parseListItem _ = Nothing
+
+parseSection :: [(String, JSONValue)] -> Maybe Content
+parseSection obj = do
+  guard $ lookup "type" obj == Just (JSONString "section")
+  title <- lookup "title" obj >>= getString
+  contentArr <- lookup "content" obj >>= getArray
+  contents <- mapM jsonValueToContent contentArr
+  return (Section title contents)
+
+parseStandardObject :: [(String, JSONValue)] -> Maybe Content
+parseStandardObject obj = do
+  typeVal <- lookup "type" obj >>= getString
+  case typeVal of
+    "paragraph" -> parseParagraph obj
+    "codeblock" -> parseCodeBlock obj
+    "section" -> parseSection obj
+    "list" -> parseList obj
+    "link" -> parseLink obj
+    "image" -> parseImage obj
+    "italic" -> parseItalicContent obj
+    "bold" -> parseBoldContent obj
+    "code" -> parseCodeContent obj
+    _ -> Nothing
+
+parseParagraph :: [(String, JSONValue)] -> Maybe Content
+parseParagraph obj = do
+  contentArr <- lookup "content" obj >>= getArray
+  contents <- mapM jsonValueToContent contentArr
+  return (Paragraph contents)
+
+parseCodeBlock :: [(String, JSONValue)] -> Maybe Content
+parseCodeBlock obj = do
+  content <- lookup "content" obj >>= getString
+  return (CodeBlock content)
 
 parseItalicContent :: [(String, JSONValue)] -> Maybe Content
 parseItalicContent obj = do
-  content <- (lookup "content" obj >>= jsonValueToContent) <|> Just (Text "")
-  return $ Italic content
+  content <- lookup "content" obj >>= jsonValueToContent
+  return (Italic content)
 
 parseBoldContent :: [(String, JSONValue)] -> Maybe Content
 parseBoldContent obj = do
-  content <- (lookup "content" obj >>= jsonValueToContent) <|> Just (Text "")
-  return $ Bold content
+  content <- lookup "content" obj >>= jsonValueToContent
+  return (Bold content)
 
 parseCodeContent :: [(String, JSONValue)] -> Maybe Content
 parseCodeContent obj = do
-  code <- (lookup "content" obj >>= getString) <|> Just ""
-  return $ Code code
+  content <- lookup "content" obj >>= getString
+  return (Code content)
 
-parseLinkContent :: [(String, JSONValue)] -> Maybe Content
-parseLinkContent obj = do
-  text <- ((lookup "text" obj >>= getString) <|> 
-          (lookup "content" obj >>= getString)) <|> Just "link"
-  url <- (lookup "url" obj >>= getString) <|> Just "#"
-  return $ Link text url
-
-parseImageContent :: [(String, JSONValue)] -> Maybe Content
-parseImageContent obj = do
-  alt <- (lookup "alt" obj >>= getString) <|> Just "image"
-  url <- (lookup "url" obj >>= getString) <|> Just "#"
-  return $ Image alt url
-
-parseCodeBlockContent :: [(String, JSONValue)] -> Maybe Content
-parseCodeBlockContent obj = do
-  code <- (lookup "content" obj >>= getString) <|> Just ""
-  return $ CodeBlock code
-
-parseListContent :: [(String, JSONValue)] -> Maybe Content
-parseListContent obj = do
-  items <- (lookup "items" obj >>= getArray) <|> Just []
-  itemsList <- (mapM jsonValueToItem items) <|> Just []
-  return $ List (if null itemsList then [Item [Text ""]] else itemsList)
-
-selectContentParser :: String -> [(String, JSONValue)] -> Maybe Content
-selectContentParser "paragraph" = parseParagraphContent
-selectContentParser "section" = parseSectionContent
-selectContentParser "italic" = parseItalicContent
-selectContentParser "bold" = parseBoldContent
-selectContentParser "code" = parseCodeContent
-selectContentParser "link" = parseLinkContent
-selectContentParser "image" = parseImageContent
-selectContentParser "codeblock" = parseCodeBlockContent
-selectContentParser "list" = parseListContent
-selectContentParser _ = \obj -> Just (Text (show obj))
-
-jsonValueToContent :: JSONValue -> Maybe Content
-jsonValueToContent (JSONString s) = Just (Text s)
-jsonValueToContent (JSONObject obj) = do
-  typeStr <- (lookup "type" obj >>= getString) <|> Just "text"
-  result <- selectContentParser typeStr obj
-  return result
-jsonValueToContent (JSONArray arr) =
-  Just (Paragraph (catMaybes (map jsonValueToContent arr)))
-jsonValueToContent (JSONNumber n) = Just (Text (show n))
-jsonValueToContent (JSONBool b) = Just (Text (show b))
-jsonValueToContent JSONNull = Just (Text "")
-
-parseJSON :: String -> Maybe Document
-parseJSON input = case runParser parseJSONValue input of
-  Just (value, rest) | all isSpace rest -> jsonToDocument value
-  _ -> 
-    Just (Document (Header "" Nothing Nothing) [Text "Parse error"])
+guard :: Bool -> Maybe ()
+guard True = Just ()
+guard False = Nothing
