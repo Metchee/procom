@@ -14,7 +14,9 @@ formatXML :: Document -> String
 formatXML doc = 
   "<document>\n" ++
   formatHeader (docHeader doc) ++
-  formatBody (docBody doc) ++
+  "  <body>\n" ++
+  concatMap (formatContent 4) (docContent doc) ++
+  "  </body>\n" ++
   "</document>\n"
 
 formatHeader :: Header -> String
@@ -27,12 +29,6 @@ formatHeader header =
     formatOptionalAttr _ Nothing = ""
     formatOptionalAttr name (Just value) = " " ++
       name ++ "=\"" ++ escapeXML value ++ "\""
-
-formatBody :: [Content] -> String
-formatBody contents =
-  "  <body>\n" ++
-  concatMap (formatContent 4) contents ++
-  "  </body>\n"
 
 formatContent :: Int -> Content -> String
 formatContent indent (Text text) = 
@@ -56,13 +52,14 @@ formatContent indent (Paragraph contents) =
   spaces indent ++ "<paragraph>\n" ++
   concatMap (formatContent (indent + 2)) contents ++
   spaces indent ++ "</paragraph>\n"
-formatContent indent (Section title contents) =
+formatContent indent (Section titleMaybe contents) =
+  let title = maybe "" id titleMaybe in
   spaces indent ++ "<section title=\"" ++ escapeXML title ++ "\">\n" ++
   concatMap (formatContent (indent + 2)) contents ++
   spaces indent ++ "</section>\n"
-formatContent indent (CodeBlock code) =
+formatContent indent (CodeBlock contents) =
   spaces indent ++ "<codeblock>\n" ++
-  spaces (indent + 2) ++ escapeXML code ++ "\n" ++
+  concatMap (formatContent (indent + 2)) contents ++
   spaces indent ++ "</codeblock>\n"
 formatContent indent (List items) =
   spaces indent ++ "<list>\n" ++
@@ -88,11 +85,12 @@ formatContentInline (Image alt url) = "<image alt=\"" ++
   escapeXML alt ++ "\" url=\"" ++ escapeXML url ++ "\"></image>"
 formatContentInline (Paragraph contents) =
   concatMap formatContentInline contents
-formatContentInline (Section title contents) =
+formatContentInline (Section titleMaybe contents) =
+  let title = maybe "" id titleMaybe in
   "<section title=\"" ++ escapeXML title ++ "\">" ++
   concatMap formatContentInline contents ++ "</section>"
-formatContentInline (CodeBlock code) =
-  "<codeblock>" ++ escapeXML code ++ "</codeblock>"
+formatContentInline (CodeBlock contents) =
+  "<codeblock>" ++ concatMap formatContentInline contents ++ "</codeblock>"
 formatContentInline (List items) =
   "<list>" ++ concatMap formatItemInline items ++ "</list>"
 

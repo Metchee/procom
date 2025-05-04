@@ -14,7 +14,7 @@ formatJSON :: Document -> String
 formatJSON doc =
   "{\n" ++
   "  \"header\": " ++ formatHeader (docHeader doc) ++ ",\n" ++
-  "  \"body\": " ++ formatBody (docBody doc) ++ "\n" ++
+  "  \"body\": " ++ formatBody (docContent doc) ++ "\n" ++
   "}\n"
 
 formatHeader :: Header -> String
@@ -40,8 +40,7 @@ formatContent indent (Text text) =
   spaces indent ++ "\"" ++ escape text ++ "\""
 formatContent indent (Italic content) =
   spaces indent ++ "{\n" ++
-  spaces (indent + 2) ++
-    "\"type\": \"italic\",\n" ++
+  spaces (indent + 2) ++ "\"type\": \"italic\",\n" ++
   spaces (indent + 2) ++ "\"content\": " ++
   formatContentInline content ++ "\n" ++
   spaces indent ++ "}"
@@ -75,7 +74,8 @@ formatContent indent (Paragraph contents) =
   joinWithComma (map (formatContent (indent + 4)) contents) ++ "\n" ++
   spaces (indent + 2) ++ "]\n" ++
   spaces indent ++ "}"
-formatContent indent (Section title contents) =
+formatContent indent (Section titleMaybe contents) =
+  let title = maybe "" id titleMaybe in
   spaces indent ++ "{\n" ++
   spaces (indent + 2) ++ "\"type\": \"section\",\n" ++
   spaces (indent + 2) ++ "\"title\": \"" ++ escape title ++ "\",\n" ++
@@ -83,10 +83,12 @@ formatContent indent (Section title contents) =
   joinWithComma (map (formatContent (indent + 4)) contents) ++ "\n" ++
   spaces (indent + 2) ++ "]\n" ++
   spaces indent ++ "}"
-formatContent indent (CodeBlock code) =
+formatContent indent (CodeBlock contents) =
   spaces indent ++ "{\n" ++
   spaces (indent + 2) ++ "\"type\": \"codeblock\",\n" ++
-  spaces (indent + 2) ++ "\"content\": \"" ++ escape code ++ "\"\n" ++
+  spaces (indent + 2) ++ "\"content\": [\n" ++
+  joinWithComma (map (formatContent (indent + 4)) contents) ++ "\n" ++
+  spaces (indent + 2) ++ "]\n" ++
   spaces indent ++ "}"
 formatContent indent (List items) =
   spaces indent ++ "{\n" ++
@@ -125,14 +127,16 @@ formatContentInline (Paragraph contents) =
   "{\n      \"type\": \"paragraph\",\n      \"content\": [" ++ 
   (joinWithComma (map formatContentInline contents)) ++ 
   "]\n    }"
-formatContentInline (Section title contents) =
+formatContentInline (Section titleMaybe contents) =
+  let title = maybe "" id titleMaybe in
   "{\n      \"type\": \"section\",\n      \"title\": \"" ++ escape title ++ 
   "\",\n      \"content\": [" ++ 
   (joinWithComma (map formatContentInline contents)) ++
   "]\n    }"
-formatContentInline (CodeBlock code) =
-  "{\n      \"type\": \"codeblock\",\n      \"content\": \"" ++
-  escape code ++ "\"\n    }"
+formatContentInline (CodeBlock contents) =
+  "{\n      \"type\": \"codeblock\",\n      \"content\": [" ++
+  (joinWithComma (map formatContentInline contents)) ++
+  "]\n    }"
 formatContentInline (List items) =
   "{\n      \"type\": \"list\",\n      \"items\": [" ++
   (joinWithComma (map formatItemInline items)) ++

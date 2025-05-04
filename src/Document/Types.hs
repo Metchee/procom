@@ -11,7 +11,7 @@ import Data.Maybe (isJust)
 
 data Document = Document {
   docHeader :: Header,
-  docBody   :: [Content]
+  docContent :: [Content]
 } deriving (Show, Eq)
 
 data Header = Header {
@@ -28,8 +28,8 @@ data Content
   | Link String String
   | Image String String
   | Paragraph [Content]
-  | Section String [Content]
-  | CodeBlock String
+  | Section (Maybe String) [Content]
+  | CodeBlock [Content]
   | List [Item]
   deriving (Show, Eq)
 

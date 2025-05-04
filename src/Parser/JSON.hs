@@ -112,70 +112,111 @@ jsonToDocument _ = Nothing
 
 jsonValueToContent :: JSONValue -> Maybe Content
 jsonValueToContent (JSONString s) = Just (Text s)
+jsonValueToContent (JSONArray arr) = do
+  contents <- mapM jsonValueToContent arr
+  return (Paragraph contents)
 jsonValueToContent (JSONObject obj) = 
+  parseComplexObject obj <|>
   parseStandardObject obj <|> 
-  parseDirectKeyObject obj <|> 
   Just (Text (show obj))
-jsonValueToContent (JSONArray arr) = 
-  let contents = catMaybes (map jsonValueToContent arr)
-  in Just (Paragraph contents)
 jsonValueToContent _ = Nothing
 
-parseDirectKeyObject :: [(String, JSONValue)] -> Maybe Content
-parseDirectKeyObject obj
-  | length obj == 1 = 
-      case head obj of
-        ("paragraph", JSONString content) -> 
-          Just (Paragraph [Text content])
-        ("section", JSONObject sectionObj) -> 
-          parseSectionFromObj sectionObj
-        ("codeblock", JSONString content) -> 
-          Just (CodeBlock content)
-        ("list", JSONArray items) -> 
-          parseListItems items
-        ("link", JSONObject linkObj) -> 
-          parseLinkFromObj linkObj
-        ("image", JSONObject imgObj) -> 
-          parseImageFromObj imgObj
-        ("italic", JSONString content) -> 
-          Just (Italic (Text content))
-        ("bold", JSONString content) -> 
-          Just (Bold (Text content))
-        ("code", JSONString content) -> 
-          Just (Code content)
-        _ -> Nothing
+parseComplexObject :: [(String, JSONValue)] -> Maybe Content
+parseComplexObject obj
+  | length obj == 1 = case head obj of
+      ("section", sectionValue) -> parseSectionValue sectionValue
+      ("list", listValue) -> parseListValue listValue
+      ("link", linkValue) -> parseLinkValue linkValue
+      ("image", imageValue) -> parseImageValue imageValue
+      ("codeblock", codeblockValue) -> parseCodeblockValue codeblockValue
+      ("bold", boldValue) -> parseBoldValue boldValue
+      ("italic", italicValue) -> parseItalicValue italicValue
+      ("code", codeValue) -> parseCodeValue codeValue
+      _ -> Nothing
   | otherwise = Nothing
 
-parseSectionFromObj :: [(String, JSONValue)] -> Maybe Content
-parseSectionFromObj obj = do
+parseSectionValue :: JSONValue -> Maybe Content
+parseSectionValue (JSONObject obj) = do
   title <- lookup "title" obj >>= getString
   content <- lookup "content" obj >>= getArray
   contents <- mapM jsonValueToContent content
-  return (Section title contents)
+  return (Section (Just title) contents)
+parseSectionValue _ = Nothing
 
-parseLinkFromObj :: [(String, JSONValue)] -> Maybe Content
-parseLinkFromObj obj = do
-  text <- lookup "text" obj >>= getString
-  url <- lookup "url" obj >>= getString
-  return (Link text url)
-
-parseImageFromObj :: [(String, JSONValue)] -> Maybe Content
-parseImageFromObj obj = do
-  alt <- lookup "alt" obj >>= getString
-  url <- lookup "url" obj >>= getString
-  return (Image alt url)
-
-parseListItems :: [JSONValue] -> Maybe Content
-parseListItems items = do
-  itemsList <- mapM parseListItem items
-  return (List itemsList)
+-- Improved list parsing to handle both formats
+parseListValue :: JSONValue -> Maybe Content
+parseListValue (JSONArray items) = do
+  listItems <- mapM parseListItem items
+  return (List listItems)
+parseListValue _ = Nothing
 
 parseListItem :: JSONValue -> Maybe Item
 parseListItem (JSONObject obj) = do
   contentArr <- lookup "content" obj >>= getArray
   contents <- mapM jsonValueToContent contentArr
   return (Item contents)
+parseListItem (JSONArray content) = do
+  contents <- mapM jsonValueToContent content
+  return (Item contents)
+parseListItem (JSONString s) = Just (Item [Text s])
 parseListItem _ = Nothing
+
+parseLinkValue :: JSONValue -> Maybe Content
+parseLinkValue (JSONObject obj) = do
+  url <- lookup "url" obj >>= getString
+  
+  -- Try different approaches to get link text
+  textMaybe <- case lookup "text" obj of
+                 Just (JSONString s) -> Just s
+                 _ -> case lookup "content" obj of
+                        Just (JSONArray [JSONString s]) -> Just s
+                        _ -> Just "link"
+  
+  return (Link textMaybe url)
+parseLinkValue _ = Nothing
+
+parseImageValue :: JSONValue -> Maybe Content
+parseImageValue (JSONObject obj) = do
+  url <- lookup "url" obj >>= getString
+  
+  -- Try different approaches to get alt text
+  altMaybe <- case lookup "alt" obj of
+                Just (JSONString s) -> Just s
+                _ -> case lookup "alt" obj of
+                       Just (JSONArray [JSONString s]) -> Just s
+                       _ -> Just "image"
+  
+  return (Image altMaybe url)
+parseImageValue _ = Nothing
+
+parseCodeblockValue :: JSONValue -> Maybe Content
+parseCodeblockValue (JSONString code) = 
+  Just (CodeBlock [Text code])
+parseCodeblockValue (JSONArray content) = do
+  contents <- mapM jsonValueToContent content
+  return (CodeBlock contents)
+parseCodeblockValue _ = Nothing
+
+parseBoldValue :: JSONValue -> Maybe Content
+parseBoldValue (JSONString text) = Just (Bold (Text text))
+parseBoldValue (JSONObject obj) = do
+  content <- lookup "content" obj >>= jsonValueToContent
+  return (Bold content)
+parseBoldValue _ = Nothing
+
+parseItalicValue :: JSONValue -> Maybe Content
+parseItalicValue (JSONString text) = Just (Italic (Text text))
+parseItalicValue (JSONObject obj) = do
+  content <- lookup "content" obj >>= jsonValueToContent
+  return (Italic content)
+parseItalicValue _ = Nothing
+
+parseCodeValue :: JSONValue -> Maybe Content
+parseCodeValue (JSONString text) = Just (Code text)
+parseCodeValue (JSONObject obj) = do
+  content <- lookup "content" obj >>= getString
+  return (Code content)
+parseCodeValue _ = Nothing
 
 parseStandardObject :: [(String, JSONValue)] -> Maybe Content
 parseStandardObject obj = do
@@ -200,15 +241,16 @@ parseParagraph obj = do
 
 parseCodeBlock :: [(String, JSONValue)] -> Maybe Content
 parseCodeBlock obj = do
-  content <- lookup "content" obj >>= getString
-  return (CodeBlock content)
+  contentArr <- lookup "content" obj >>= getArray
+  contents <- mapM jsonValueToContent contentArr
+  return (CodeBlock contents)
 
 parseSection :: [(String, JSONValue)] -> Maybe Content
 parseSection obj = do
   title <- lookup "title" obj >>= getString
   contentArr <- lookup "content" obj >>= getArray
   contents <- mapM jsonValueToContent contentArr
-  return (Section title contents)
+  return (Section (Just title) contents)
 
 parseList :: [(String, JSONValue)] -> Maybe Content
 parseList obj = do

@@ -81,22 +81,22 @@ main = do
 
 handleError :: IOException -> IO ()
 handleError e = 
-  hPutStrLn stderr ("Erreur: " ++ show e) >>
+  hPutStrLn stderr ("Error: " ++ show e) >>
   exitWith (ExitFailure 84)
 
 safeRun :: Options -> IO ()
-safeRun opts = 
-  (try (run opts) :: IO (Either IOException ())) >>= \result ->
+safeRun opts = do
+  result <- try (run opts)
   case result of
     Left e -> handleError e
     Right _ -> return ()
 
 run :: Options -> IO ()
-run opts =
-  validateOptions opts >>
-  readFileOrExit (inputFile opts) >>= \content ->
-  determineFormat opts content >>= \format ->
-  parseDocument format content >>= \doc ->
+run opts = do
+  validateOptions opts
+  content <- readFileOrExit (inputFile opts)
+  format <- determineFormat opts content
+  doc <- parseDocumentSafe format content
   writeOutput opts doc
 
 validateFormat :: String -> Bool -> IO ()
@@ -104,8 +104,8 @@ validateFormat fmt valid =
   if not valid then exitWithError (UnsupportedFormat fmt) else return ()
 
 validateOptions :: Options -> IO ()
-validateOptions opts =
-  validateFormat (outputFormat opts) (isValidFormat (outputFormat opts)) >>
+validateOptions opts = do
+  validateFormat (outputFormat opts) (isValidFormat (outputFormat opts))
   case inputFormat opts of
     Just fmt -> validateFormat fmt (isValidFormat fmt)
     Nothing -> return ()
@@ -117,20 +117,31 @@ determineFormat opts content = case inputFormat opts of
     Just fmt -> return fmt
     Nothing -> return XML
 
-parseDocument :: Format -> String -> IO Document
-parseDocument format content = case parseByFormat format content of
-  Just d -> return d
-  Nothing -> case parseAuto content of
-      Just d -> return d
-      Nothing -> return $ Document (Header "" Nothing Nothing) []
+parseDocumentSafe :: Format -> String -> IO Document
+parseDocumentSafe format content = do
+  let result = parseByFormat format content
+  case result of
+    Just d -> return d
+    Nothing -> do
+      -- Print debugging info
+      hPutStrLn stderr $ "Debug: Trying to parse " ++ show format ++ " failed"
+      case parseAuto content of
+        Just d -> return d
+        Nothing -> do
+          hPutStrLn stderr $ "Debug: Auto parse also failed"
+          case format of
+            XML -> hPutStrLn stderr "Debug: XML parsing failed"
+            JSON -> hPutStrLn stderr "Debug: JSON parsing failed"
+            Markdown -> hPutStrLn stderr "Debug: Markdown parsing failed"
+          exitWithError (ParseError "Failed to parse document")
 
 handleWriteError :: IOException -> IO ()
 handleWriteError e = 
-  hPutStrLn stderr $ "Erreur lors de l'écriture du fichier: " ++ show e
+  hPutStrLn stderr $ "Error when writing to file: " ++ show e
 
 writeToFile :: FilePath -> String -> IO ()
-writeToFile path content = 
-  (E.try (writeFile path content) :: IO (Either IOException ())) >>= \result ->
+writeToFile path content = do
+  result <- E.try (writeFile path content)
   case result of
     Left e -> handleWriteError e
     Right _ -> return ()
@@ -143,9 +154,9 @@ writeOutput opts doc =
        Nothing   -> putStr output
 
 handleReadError :: IOException -> IO String
-handleReadError e = 
-  hPutStrLn stderr ("Erreur lors de la lecture du fichier: " ++ show e) >>
-  return ""
+handleReadError e = do
+  hPutStrLn stderr ("Error when reading file: " ++ show e)
+  exitWithError (FileNotFound (show e))
 
 readFileOrExit :: FilePath -> IO String
 readFileOrExit path = E.catch (readFile path) handleReadError
@@ -168,14 +179,3 @@ formatByFormat :: Format -> Document -> String
 formatByFormat XML = formatXML
 formatByFormat JSON = formatJSON
 formatByFormat Markdown = formatMarkdown
-
-isJust :: Maybe a -> Bool
-isJust (Just _) = True
-isJust Nothing = False
-
-fromJust :: Maybe a -> a
-fromJust (Just x) = x
-fromJust Nothing = error "fromJust: Nothing"
-
-unless :: Bool -> IO () -> IO ()
-unless p m = if p then pure () else m

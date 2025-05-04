@@ -17,7 +17,7 @@ import Data.Maybe (catMaybes, fromMaybe)
 parseMarkdownDocument :: Parser Document
 parseMarkdownDocument = do
   header <- parseMarkdownHeader <|> parseEmptyHeader
-  body <- parseMarkdownBody <|> return [Text ""]
+  body <- parseMarkdownBody
   return $ Document header body
   where
     parseEmptyHeader = return (Header "" Nothing Nothing)
@@ -80,14 +80,13 @@ parseMarkdownContent =
   parseList 
   <|> parseSection 
   <|> parseCodeBlock 
-  <|> parseParagraph 
-  <|> parseText
+  <|> parseParagraph
 
 parseParagraph :: Parser Content
 parseParagraph = do
-  lines <- some parseInlineContent
+  contents <- some parseInlineContent
   many (char '\n')
-  return $ Paragraph lines
+  return $ Paragraph contents
 
 parseSection :: Parser Content
 parseSection = do
@@ -96,7 +95,7 @@ parseSection = do
   title <- some (satisfy (/= '\n'))
   many (char '\n')
   contents <- many parseMarkdownContent
-  return $ Section title contents
+  return $ Section (Just title) contents
 
 parseCodeBlock :: Parser Content
 parseCodeBlock = do
@@ -106,7 +105,7 @@ parseCodeBlock = do
   code <- tillString "```"
   string "```"
   many (char '\n')
-  return $ CodeBlock code
+  return $ CodeBlock [Text code]
 
 parseList :: Parser Content
 parseList = do
@@ -121,12 +120,6 @@ parseListItem = do
   content <- many parseInlineContent
   many (char '\n')
   return $ Item content
-
-parseText :: Parser Content
-parseText = do
-  text <- some (satisfy (/= '\n'))
-  many (char '\n')
-  return $ Text text
 
 parseInlineContent :: Parser Content
 parseInlineContent = 
@@ -190,7 +183,7 @@ parseMarkdown :: String -> Maybe Document
 parseMarkdown input = 
   case runParser parseMarkdownDocument input of
     Just (doc, rest) | all isSpace rest -> Just doc
-    _ -> Just (Document (Header "" Nothing Nothing) [Text ""])
+    _ -> Just (Document (Header "" Nothing Nothing) [])
 
 findField :: String -> [(String, String)] -> String
 findField key fields = 

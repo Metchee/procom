@@ -14,7 +14,7 @@ formatMarkdown :: Document -> String
 formatMarkdown doc =
   let
     header = formatHeader (docHeader doc)
-    body = trimEnd (formatBody (docBody doc))
+    body = trimEnd (formatBody (docContent doc))
   in header ++ body
 
 trimEnd :: String -> String
@@ -43,25 +43,27 @@ formatContent (Link text url) = "[" ++ text ++ "](" ++ url ++ ")\n\n"
 formatContent (Image alt url) = "![" ++ alt ++ "](" ++ url ++ ")\n\n"
 formatContent (Paragraph contents) = 
   concatMap formatParagraphContent contents ++ "\n\n"
-formatContent (Section title contents) = 
-  "# " ++ title ++ "\n\n" ++
+formatContent (Section titleMaybe contents) = 
+  "# " ++ maybe "" id titleMaybe ++ "\n\n" ++
   concatMap formatContent contents
-formatContent (CodeBlock code) = 
-  "```\n" ++ code ++ "\n```\n\n"
+formatContent (CodeBlock contents) = 
+  "```\n" ++ concatMap formatContentInlineNoWrap contents ++ "\n```\n\n"
 formatContent (List items) = 
   concatMap formatItem items ++ "\n"
 
 formatParagraphContent :: Content -> String
 formatParagraphContent (Italic content) = 
-  "*" ++ formatContentInline content ++ "* "
+  "*" ++ formatContentInline content ++ "*"
 formatParagraphContent (Bold content) = 
-  "**" ++ formatContentInline content ++ "** "
-formatParagraphContent (Code code) = "`" ++ code ++ "` "
+  "**" ++ formatContentInline content ++ "**"
+formatParagraphContent (Code code) = "`" ++ code ++ "`"
 formatParagraphContent (Link text url) = 
-  "[" ++ text ++ "](" ++ url ++ ") "
+  "[" ++ text ++ "](" ++ url ++ ")"
 formatParagraphContent (Image alt url) = 
-  "![" ++ alt ++ "](" ++ url ++ ") "
-formatParagraphContent (Text text) = text ++ " "
+  "![" ++ alt ++ "](" ++ url ++ ")"
+formatParagraphContent (Text text) = text
+formatParagraphContent (Paragraph contents) =
+  concatMap formatParagraphContent contents
 formatParagraphContent _ = ""
 
 formatItem :: Item -> String
@@ -81,12 +83,18 @@ formatContentInline (Image alt url) =
   "![" ++ alt ++ "](" ++ url ++ ")"
 formatContentInline (Paragraph contents) =
   concatMap formatContentInline contents
-formatContentInline (Section title _) = 
-  "# " ++ title
-formatContentInline (CodeBlock code) = 
-  "```" ++ code ++ "```"
+formatContentInline (Section titleMaybe _) = 
+  "# " ++ maybe "" id titleMaybe
+formatContentInline (CodeBlock contents) = 
+  "```" ++ concatMap formatContentInline contents ++ "```"
 formatContentInline (List items) = 
   concatMap formatItemInline items
+
+formatContentInlineNoWrap :: Content -> String
+formatContentInlineNoWrap (Text text) = text
+formatContentInlineNoWrap (Paragraph contents) = 
+  concatMap formatContentInlineNoWrap contents
+formatContentInlineNoWrap _ = ""
 
 formatItemInline :: Item -> String
 formatItemInline (Item contents) =
