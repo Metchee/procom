@@ -13,47 +13,62 @@ import Control.Applicative (many, some, (<|>), optional)
 import Data.Char (isSpace, isAlpha, isAlphaNum)
 import Data.Maybe (catMaybes, fromMaybe)
 
--- Parse an XML attribute
-parseAttribute :: Parser (String, String)
-parseAttribute = do
-  spaces
-  key <- some (satisfy (\c -> isAlphaNum c || c == '_' || c == '-'))
+parseAttributeKey :: Parser String
+parseAttributeKey =
+  spaces >>
+  some (satisfy (\c -> isAlphaNum c || c == '_' || c == '-'))
+
+parseAttributeValue :: Parser String
+parseAttributeValue = do
   spaces
   char '='
   spaces
   quote <- char '"' <|> char '\''
   value <- many (satisfy (/= quote))
   char quote
+  return value
+
+parseAttribute :: Parser (String, String)
+parseAttribute = do
+  key <- parseAttributeKey
+  value <- parseAttributeValue
   spaces
   return (key, value)
 
--- Parse the opening tag of an XML element
-parseOpenTag :: String -> Parser [(String, String)]
-parseOpenTag tag = do
-  spaces
-  string "<"
-  spaces
-  string tag
-  spaces
-  attrs <- many parseAttribute
-  spaces
-  string ">"
-  spaces
-  return attrs
-
--- Parse the closing tag of an XML element
-parseCloseTag :: String -> Parser ()
-parseCloseTag tag = do
-  spaces
-  string "</"
-  spaces
-  string tag
-  spaces
-  string ">"
-  spaces
+parseTagStart :: String -> Parser ()
+parseTagStart tag =
+  spaces >>
+  string "<" >>
+  spaces >>
+  string tag >>
+  spaces >>
   return ()
 
--- Parse an XML element with its content
+parseTagEnd :: Parser ()
+parseTagEnd =
+  spaces >>
+  string ">" >>
+  spaces >>
+  return ()
+
+parseOpenTag :: String -> Parser [(String, String)]
+parseOpenTag tag = do
+  parseTagStart tag
+  attrs <- many parseAttribute
+  parseTagEnd
+  return attrs
+
+parseCloseTag :: String -> Parser ()
+parseCloseTag tag =
+  spaces >>
+  string "</" >>
+  spaces >>
+  string tag >>
+  spaces >>
+  string ">" >>
+  spaces >>
+  return ()
+
 parseElement :: String -> Parser a -> Parser ([(String, String)], a)
 parseElement tag contentParser = do
   attrs <- parseOpenTag tag
@@ -61,48 +76,43 @@ parseElement tag contentParser = do
   parseCloseTag tag
   return (attrs, content)
 
--- Parse a self-closing XML element
-parseSelfClosingTag :: String -> Parser [(String, String)]
-parseSelfClosingTag tag = do
-  spaces
-  string "<"
-  spaces
-  string tag
-  spaces
-  attrs <- many parseAttribute
-  spaces
-  string "/>"
-  spaces
-  return attrs
-
--- Parse an XML element that can be either normal or self-closing
-parseElementOrSelfClosing :: String -> Parser a -> Parser ([(String, String)], Maybe a)
-parseElementOrSelfClosing tag contentParser = 
-  (parseElement tag contentParser >>= \(attrs, content) -> return (attrs, Just content))
-  <|>
-  (parseSelfClosingTag tag >>= \attrs -> return (attrs, Nothing))
-
--- Parse the entire XML document
-parseXMLDocument :: Parser Document
-parseXMLDocument = do
-  spaces
-  _ <- optional (parseXMLDeclaration)
-  spaces
-  _ <- parseOpenTag "document"
-  header <- parseXMLHeader
-  body <- parseXMLBody
-  parseCloseTag "document"
-  return (Document header body)
-
--- Parse XML declaration (optional)
-parseXMLDeclaration :: Parser ()
-parseXMLDeclaration = do
-  string "<?xml"
-  many (satisfy (/= '>'))
-  string "?>"
+parseSelfClosingEnd :: Parser ()
+parseSelfClosingEnd =
+  spaces >>
+  string "/>" >>
+  spaces >>
   return ()
 
--- Parse the header section of an XML document
+parseSelfClosingTag :: String -> Parser [(String, String)]
+parseSelfClosingTag tag = do
+  parseTagStart tag
+  attrs <- many parseAttribute
+  parseSelfClosingEnd
+  return attrs
+
+parseElementWithContent :: String -> Parser a -> 
+                          Parser ([(String, String)], Maybe a)
+parseElementWithContent tag contentParser =
+  parseElement tag contentParser >>= \(attrs, content) ->
+  return (attrs, Just content)
+
+parseElementNoContent :: String -> Parser ([(String, String)], Maybe a)
+parseElementNoContent tag =
+  parseSelfClosingTag tag >>= \attrs ->
+  return (attrs, Nothing)
+
+parseElementOrSelfClosing :: String -> Parser a -> 
+                            Parser ([(String, String)], Maybe a)
+parseElementOrSelfClosing tag contentParser =
+  parseElementWithContent tag contentParser <|> parseElementNoContent tag
+
+parseXMLDeclaration :: Parser ()
+parseXMLDeclaration =
+  string "<?xml" >>
+  many (satisfy (/= '>')) >>
+  string "?>" >>
+  return ()
+
 parseXMLHeader :: Parser Header
 parseXMLHeader = do
   (attrs, _) <- parseElementOrSelfClosing "header" (return ())
@@ -111,28 +121,51 @@ parseXMLHeader = do
     (lookup "author" attrs)
     (lookup "date" attrs)
 
--- Parse the body section of an XML document
 parseXMLBody :: Parser [Content]
 parseXMLBody = do
   (_, content) <- parseElement "body" (many parseXMLContent)
   return content
 
--- Parse any XML content element
-parseXMLContent :: Parser Content
-parseXMLContent = choice
+parseDocumentStart :: Parser ()
+parseDocumentStart = do
+  spaces
+  _ <- optional parseXMLDeclaration
+  spaces
+  _ <- parseOpenTag "document"
+  return ()
+
+parseDocumentEnd :: Parser ()
+parseDocumentEnd = parseCloseTag "document"
+
+parseXMLDocument :: Parser Document
+parseXMLDocument = do
+  parseDocumentStart
+  header <- parseXMLHeader
+  body <- parseXMLBody
+  parseDocumentEnd
+  return (Document header body)
+
+parseXMLBlockContent :: Parser Content
+parseXMLBlockContent = choice
   [ parseXMLParagraph
   , parseXMLSection
-  , parseXMLText
-  , parseXMLBold
-  , parseXMLItalic
-  , parseXMLCode
   , parseXMLCodeBlock
-  , parseXMLLink
-  , parseXMLImage
   , parseXMLList
   ]
 
--- Parse a text node
+parseXMLInlineContent :: Parser Content
+parseXMLInlineContent = choice
+  [ parseXMLText
+  , parseXMLBold
+  , parseXMLItalic
+  , parseXMLCode
+  , parseXMLLink
+  , parseXMLImage
+  ]
+
+parseXMLContent :: Parser Content
+parseXMLContent = parseXMLBlockContent <|> parseXMLInlineContent
+
 parseXMLText :: Parser Content
 parseXMLText = do
   spaces
@@ -140,32 +173,41 @@ parseXMLText = do
   spaces
   return (Text text)
 
--- Parse a paragraph element
 parseXMLParagraph :: Parser Content
 parseXMLParagraph = do
   (_, content) <- parseElement "paragraph" (many parseXMLContent)
   return (Paragraph content)
 
--- Parse a section element
 parseXMLSection :: Parser Content
 parseXMLSection = do
   (attrs, content) <- parseElement "section" (many parseXMLContent)
   let title = fromMaybe "" (lookup "title" attrs)
   return (Section title content)
 
--- Parse a bold element
+parseXMLBoldContent :: Parser Content
+parseXMLBoldContent = choice
+  [ parseXMLText
+  , parseXMLItalic
+  , parseXMLCode
+  ]
+
 parseXMLBold :: Parser Content
 parseXMLBold = do
-  (_, content) <- parseElement "bold" (choice [parseXMLText, parseXMLItalic, parseXMLCode])
+  (_, content) <- parseElement "bold" parseXMLBoldContent
   return (Bold content)
 
--- Parse an italic element
+parseXMLItalicContent :: Parser Content
+parseXMLItalicContent = choice
+  [ parseXMLText
+  , parseXMLBold
+  , parseXMLCode
+  ]
+
 parseXMLItalic :: Parser Content
 parseXMLItalic = do
-  (_, content) <- parseElement "italic" (choice [parseXMLText, parseXMLBold, parseXMLCode])
+  (_, content) <- parseElement "italic" parseXMLItalicContent
   return (Italic content)
 
--- Parse a code element
 parseXMLCode :: Parser Content
 parseXMLCode = do
   (_, content) <- parseElement "code" (Text <$> many (satisfy (/= '<')))
@@ -173,7 +215,6 @@ parseXMLCode = do
     Text t -> Code t
     _ -> Code ""
 
--- Parse a code block element
 parseXMLCodeBlock :: Parser Content
 parseXMLCodeBlock = do
   (_, content) <- parseElement "codeblock" (Text <$> many (satisfy (/= '<')))
@@ -181,7 +222,6 @@ parseXMLCodeBlock = do
     Text t -> CodeBlock t
     _ -> CodeBlock ""
 
--- Parse a link element
 parseXMLLink :: Parser Content
 parseXMLLink = do
   (attrs, _) <- parseElementOrSelfClosing "link" (return ())
@@ -189,7 +229,6 @@ parseXMLLink = do
   let url = fromMaybe "" (lookup "url" attrs)
   return (Link text url)
 
--- Parse an image element
 parseXMLImage :: Parser Content
 parseXMLImage = do
   (attrs, _) <- parseElementOrSelfClosing "image" (return ())
@@ -197,24 +236,20 @@ parseXMLImage = do
   let url = fromMaybe "" (lookup "url" attrs)
   return (Image alt url)
 
--- Parse a list element
 parseXMLList :: Parser Content
 parseXMLList = do
   (_, items) <- parseElement "list" (many parseXMLItem)
   return (List items)
 
--- Parse a list item
 parseXMLItem :: Parser Item
 parseXMLItem = do
   (_, content) <- parseElement "item" (many parseXMLContent)
   return (Item content)
 
--- Helper function to choose between multiple parsers
 choice :: [Parser a] -> Parser a
 choice [] = Parser $ \_ -> Nothing
 choice (p:ps) = p <|> choice ps
 
--- Main entry point for parsing XML content
 parseXML :: String -> Maybe Document
 parseXML input = case runParser parseXMLDocument input of
   Just (doc, rest) | all isSpace rest -> Just doc

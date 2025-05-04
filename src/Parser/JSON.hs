@@ -99,22 +99,9 @@ getBody obj = do
 
 parseJSON :: String -> Maybe Document
 parseJSON input = 
-  -- D'abord, essayons d'analyser le JSON normalement
   case runParser parseJSONValue input of
     Just (value, rest) | all isSpace rest -> jsonToDocument value
-    -- Si ça échoue, vérifions si c'est un JSON "stringifié"
-    _ -> case parseStringifiedJSON input of
-           Just doc -> Just doc
-           Nothing -> Nothing
-
--- Parser pour le JSON "stringifié" (quand le JSON est encapsulé dans une chaîne)
-parseStringifiedJSON :: String -> Maybe Document
-parseStringifiedJSON input = 
-  -- Cas particulier pour les chaînes qui ressemblent à du JSON brut
-  if "[(" `isPrefixOf` input || "{" `isPrefixOf` input then
-    Just (Document (Header "" Nothing Nothing) [Text input])
-  else 
-    Nothing
+    _ -> Nothing
 
 jsonToDocument :: JSONValue -> Maybe Document
 jsonToDocument (JSONObject obj) = do
@@ -124,54 +111,62 @@ jsonToDocument (JSONObject obj) = do
 jsonToDocument _ = Nothing
 
 jsonValueToContent :: JSONValue -> Maybe Content
-jsonValueToContent (JSONString s) = 
-  -- Cas spécial pour les chaînes qui contiennent du JSON brut
-  if "[(" `isPrefixOf` s || "{" `isPrefixOf` s then
-    Just (Text s)
-  else
-    Just (Text s)
+jsonValueToContent (JSONString s) = Just (Text s)
+jsonValueToContent (JSONObject obj) = 
+  parseStandardObject obj <|> 
+  parseDirectKeyObject obj <|> 
+  Just (Text (show obj))
 jsonValueToContent (JSONArray arr) = 
   let contents = catMaybes (map jsonValueToContent arr)
   in Just (Paragraph contents)
-jsonValueToContent (JSONObject obj) =
-  parseSpecialObject obj <|> parseStandardObject obj <|> Just (Text (show obj))
+jsonValueToContent _ = Nothing
 
-parseSpecialObject :: [(String, JSONValue)] -> Maybe Content
-parseSpecialObject obj =
-  parseItalic obj <|> parseBold obj <|> parseCode obj <|> 
-  parseLink obj <|> parseImage obj <|> parseList obj <|> parseSection obj
+parseDirectKeyObject :: [(String, JSONValue)] -> Maybe Content
+parseDirectKeyObject obj
+  | length obj == 1 = 
+      case head obj of
+        ("paragraph", JSONString content) -> 
+          Just (Paragraph [Text content])
+        ("section", JSONObject sectionObj) -> 
+          parseSectionFromObj sectionObj
+        ("codeblock", JSONString content) -> 
+          Just (CodeBlock content)
+        ("list", JSONArray items) -> 
+          parseListItems items
+        ("link", JSONObject linkObj) -> 
+          parseLinkFromObj linkObj
+        ("image", JSONObject imgObj) -> 
+          parseImageFromObj imgObj
+        ("italic", JSONString content) -> 
+          Just (Italic (Text content))
+        ("bold", JSONString content) -> 
+          Just (Bold (Text content))
+        ("code", JSONString content) -> 
+          Just (Code content)
+        _ -> Nothing
+  | otherwise = Nothing
 
-parseItalic :: [(String, JSONValue)] -> Maybe Content
-parseItalic obj = do
-  content <- lookup "italic" obj >>= getString
-  return (Paragraph [Italic (Text content)])
+parseSectionFromObj :: [(String, JSONValue)] -> Maybe Content
+parseSectionFromObj obj = do
+  title <- lookup "title" obj >>= getString
+  content <- lookup "content" obj >>= getArray
+  contents <- mapM jsonValueToContent content
+  return (Section title contents)
 
-parseBold :: [(String, JSONValue)] -> Maybe Content
-parseBold obj = do
-  content <- lookup "bold" obj >>= getString
-  return (Paragraph [Bold (Text content)])
-
-parseCode :: [(String, JSONValue)] -> Maybe Content
-parseCode obj = do
-  content <- lookup "code" obj >>= getString
-  return (Paragraph [Code content])
-
-parseLink :: [(String, JSONValue)] -> Maybe Content
-parseLink obj = do
+parseLinkFromObj :: [(String, JSONValue)] -> Maybe Content
+parseLinkFromObj obj = do
   text <- lookup "text" obj >>= getString
   url <- lookup "url" obj >>= getString
   return (Link text url)
 
-parseImage :: [(String, JSONValue)] -> Maybe Content
-parseImage obj = do
+parseImageFromObj :: [(String, JSONValue)] -> Maybe Content
+parseImageFromObj obj = do
   alt <- lookup "alt" obj >>= getString
   url <- lookup "url" obj >>= getString
   return (Image alt url)
 
-parseList :: [(String, JSONValue)] -> Maybe Content
-parseList obj = do
-  guard $ lookup "type" obj == Just (JSONString "list")
-  items <- lookup "items" obj >>= getArray
+parseListItems :: [JSONValue] -> Maybe Content
+parseListItems items = do
   itemsList <- mapM parseListItem items
   return (List itemsList)
 
@@ -181,14 +176,6 @@ parseListItem (JSONObject obj) = do
   contents <- mapM jsonValueToContent contentArr
   return (Item contents)
 parseListItem _ = Nothing
-
-parseSection :: [(String, JSONValue)] -> Maybe Content
-parseSection obj = do
-  guard $ lookup "type" obj == Just (JSONString "section")
-  title <- lookup "title" obj >>= getString
-  contentArr <- lookup "content" obj >>= getArray
-  contents <- mapM jsonValueToContent contentArr
-  return (Section title contents)
 
 parseStandardObject :: [(String, JSONValue)] -> Maybe Content
 parseStandardObject obj = do
@@ -215,6 +202,31 @@ parseCodeBlock :: [(String, JSONValue)] -> Maybe Content
 parseCodeBlock obj = do
   content <- lookup "content" obj >>= getString
   return (CodeBlock content)
+
+parseSection :: [(String, JSONValue)] -> Maybe Content
+parseSection obj = do
+  title <- lookup "title" obj >>= getString
+  contentArr <- lookup "content" obj >>= getArray
+  contents <- mapM jsonValueToContent contentArr
+  return (Section title contents)
+
+parseList :: [(String, JSONValue)] -> Maybe Content
+parseList obj = do
+  items <- lookup "items" obj >>= getArray
+  itemsList <- mapM parseListItem items
+  return (List itemsList)
+
+parseLink :: [(String, JSONValue)] -> Maybe Content
+parseLink obj = do
+  text <- lookup "text" obj >>= getString
+  url <- lookup "url" obj >>= getString
+  return (Link text url)
+
+parseImage :: [(String, JSONValue)] -> Maybe Content
+parseImage obj = do
+  alt <- lookup "alt" obj >>= getString
+  url <- lookup "url" obj >>= getString
+  return (Image alt url)
 
 parseItalicContent :: [(String, JSONValue)] -> Maybe Content
 parseItalicContent obj = do

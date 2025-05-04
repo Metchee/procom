@@ -66,15 +66,23 @@ inputFormatOption = optional (strOption
  <> metavar "FORMAT"
  <> help "Input format (xml, json, markdown)" ))
 
-main :: IO ()
-main = do
-  opts <- execParser optsInfo
-  safeRun opts
+parseOptions :: IO Options
+parseOptions = execParser optsInfo
   where
     optsInfo = info (optionsParser <**> helper)
       ( fullDesc
      <> progDesc "Convert documents between different formats"
      <> header "mypandoc - a document converter" )
+
+main :: IO ()
+main = do
+  opts <- parseOptions
+  safeRun opts
+
+handleError :: IOException -> IO ()
+handleError e = 
+  hPutStrLn stderr ("Erreur: " ++ show e) >>
+  exitWith (ExitFailure 84)
 
 safeRun :: Options -> IO ()
 safeRun opts = 
@@ -82,11 +90,6 @@ safeRun opts =
   case result of
     Left e -> handleError e
     Right _ -> return ()
-  where
-    handleError :: IOException -> IO ()
-    handleError e = 
-      hPutStrLn stderr ("Erreur: " ++ show e) >>
-      exitWith (ExitFailure 84)
 
 run :: Options -> IO ()
 run opts =
@@ -96,14 +99,16 @@ run opts =
   parseDocument format content >>= \doc ->
   writeOutput opts doc
 
+validateFormat :: String -> Bool -> IO ()
+validateFormat fmt valid =
+  if not valid then exitWithError (UnsupportedFormat fmt) else return ()
+
 validateOptions :: Options -> IO ()
 validateOptions opts =
-  case outputFormat opts of
-    fmt | not (isValidFormat fmt) -> exitWithError (UnsupportedFormat fmt)
-    _ -> case inputFormat opts of
-           Just fmt | not (isValidFormat fmt) -> 
-             exitWithError (UnsupportedFormat fmt)
-           _ -> return ()
+  validateFormat (outputFormat opts) (isValidFormat (outputFormat opts)) >>
+  case inputFormat opts of
+    Just fmt -> validateFormat fmt (isValidFormat fmt)
+    Nothing -> return ()
 
 determineFormat :: Options -> String -> IO Format
 determineFormat opts content = case inputFormat opts of
@@ -119,20 +124,31 @@ parseDocument format content = case parseByFormat format content of
       Just d -> return d
       Nothing -> return $ Document (Header "" Nothing Nothing) []
 
+handleWriteError :: IOException -> IO ()
+handleWriteError e = 
+  hPutStrLn stderr $ "Erreur lors de l'écriture du fichier: " ++ show e
+
+writeToFile :: FilePath -> String -> IO ()
+writeToFile path content = 
+  (E.try (writeFile path content) :: IO (Either IOException ())) >>= \result ->
+  case result of
+    Left e -> handleWriteError e
+    Right _ -> return ()
+
 writeOutput :: Options -> Document -> IO ()
 writeOutput opts doc =
   let output = formatByFormat (stringToFormat (outputFormat opts)) doc
   in case outputFile opts of
-       Just file -> safeWriteFile file output
+       Just file -> writeToFile file output
        Nothing   -> putStr output
 
-safeWriteFile :: FilePath -> String -> IO ()
-safeWriteFile path content = 
-  (E.try (writeFile path content) :: IO (Either IOException ())) >>= \result ->
-  case result of
-    Left e -> hPutStrLn stderr $ "Erreur lors de l'écriture du fichier: " 
-              ++ show e
-    Right _ -> return ()
+handleReadError :: IOException -> IO String
+handleReadError e = 
+  hPutStrLn stderr ("Erreur lors de la lecture du fichier: " ++ show e) >>
+  return ""
+
+readFileOrExit :: FilePath -> IO String
+readFileOrExit path = E.catch (readFile path) handleReadError
 
 isValidFormat :: String -> Bool
 isValidFormat "xml" = True
@@ -152,14 +168,6 @@ formatByFormat :: Format -> Document -> String
 formatByFormat XML = formatXML
 formatByFormat JSON = formatJSON
 formatByFormat Markdown = formatMarkdown
-
-readFileOrExit :: FilePath -> IO String
-readFileOrExit path = E.catch (readFile path) handleReadError
-  where
-    handleReadError :: IOException -> IO String
-    handleReadError e = do
-      hPutStrLn stderr ("Erreur lors de la lecture du fichier: " ++ show e)
-      exitWith (ExitFailure 84)
 
 isJust :: Maybe a -> Bool
 isJust (Just _) = True

@@ -52,11 +52,15 @@ formatContent (List items) =
   concatMap formatItem items ++ "\n"
 
 formatParagraphContent :: Content -> String
-formatParagraphContent (Italic content) = "*" ++ formatContentInline content ++ "* "
-formatParagraphContent (Bold content) = "**" ++ formatContentInline content ++ "** "
+formatParagraphContent (Italic content) = 
+  "*" ++ formatContentInline content ++ "* "
+formatParagraphContent (Bold content) = 
+  "**" ++ formatContentInline content ++ "** "
 formatParagraphContent (Code code) = "`" ++ code ++ "` "
-formatParagraphContent (Link text url) = "[" ++ text ++ "](" ++ url ++ ") "
-formatParagraphContent (Image alt url) = "![" ++ alt ++ "](" ++ url ++ ") "
+formatParagraphContent (Link text url) = 
+  "[" ++ text ++ "](" ++ url ++ ") "
+formatParagraphContent (Image alt url) = 
+  "![" ++ alt ++ "](" ++ url ++ ") "
 formatParagraphContent (Text text) = text ++ " "
 formatParagraphContent _ = ""
 
@@ -66,23 +70,27 @@ formatItem (Item contents) =
 
 formatContentInline :: Content -> String
 formatContentInline (Text text) = text
-formatContentInline (Italic content) = "*" ++
-  formatContentInline content ++ "*"
-formatContentInline (Bold content) = "**" ++
-  formatContentInline content ++ "**"
+formatContentInline (Italic content) = 
+  "*" ++ formatContentInline content ++ "*"
+formatContentInline (Bold content) = 
+  "**" ++ formatContentInline content ++ "**"
 formatContentInline (Code code) = "`" ++ code ++ "`"
-formatContentInline (Link text url) = "[" ++ text ++ "](" ++ url ++ ")"
-formatContentInline (Image alt url) = "![" ++ alt ++ "](" ++ url ++ ")"
+formatContentInline (Link text url) = 
+  "[" ++ text ++ "](" ++ url ++ ")"
+formatContentInline (Image alt url) = 
+  "![" ++ alt ++ "](" ++ url ++ ")"
 formatContentInline (Paragraph contents) =
   concatMap formatContentInline contents
-formatContentInline (Section title _) = "# " ++ title
-formatContentInline (CodeBlock code) = "```" ++ code ++ "```"
-formatContentInline (List items) = concatMap formatItemInline items
+formatContentInline (Section title _) = 
+  "# " ++ title
+formatContentInline (CodeBlock code) = 
+  "```" ++ code ++ "```"
+formatContentInline (List items) = 
+  concatMap formatItemInline items
 
 formatItemInline :: Item -> String
 formatItemInline (Item contents) =
   "- " ++ concatMap formatContentInline contents
 
--- Fonction utilitaire pour nettoyer les espaces redondants
 cleanSpaces :: String -> String
 cleanSpaces = unwords . words

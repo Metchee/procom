@@ -19,8 +19,8 @@ data MyPandocError
   deriving (Show, Eq)
 
 exitWithError :: MyPandocError -> IO a
-exitWithError err = do
-  hPutStrLn stderr (formatError err)
+exitWithError err = 
+  hPutStrLn stderr (formatError err) >>
   exitWith (ExitFailure 84)
 
 formatError :: MyPandocError -> String
