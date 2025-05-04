@@ -157,10 +157,9 @@ readFileOrExit :: FilePath -> IO String
 readFileOrExit path = E.catch (readFile path) handleReadError
   where
     handleReadError :: IOException -> IO String
-    handleReadError e = 
-      hPutStrLn stderr ("Erreur lors de la lecture du fichier: " ++ 
-                        show e) >>
-      return ""
+    handleReadError e = do
+      hPutStrLn stderr ("Erreur lors de la lecture du fichier: " ++ show e)
+      exitWith (ExitFailure 84)
 
 isJust :: Maybe a -> Bool
 isJust (Just _) = True

@@ -19,10 +19,10 @@ data MyPandocError
   deriving (Show, Eq)
 
 exitWithError :: MyPandocError -> IO a
-exitWithError err = 
-  hPutStrLn stderr (formatError err) >>
+exitWithError err = do
+  hPutStrLn stderr (formatError err)
   exitWith (ExitFailure 84)
-  
+
 formatError :: MyPandocError -> String
 formatError (InvalidArguments msg) = "Error: Invalid arguments - " ++ msg
 formatError (FileNotFound path) = "Error: File not found - " ++ path
